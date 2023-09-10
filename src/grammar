@@ -2,6 +2,7 @@ expression      -> literal
                  | unary 
                  | binary
                  | grouping;
+BOOLEAN         -> "true" | "false";
 literal         -> NUMBER | STRING | BOOLEAN | NIL;
 grouping        -> "(" expression ")";
 unary           -> ( "!" | "!" ) expression;
