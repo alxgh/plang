@@ -1,6 +1,8 @@
 const std = @import("std");
 const os = @import("os");
 const scanner = @import("./scanner.zig");
+const parser = @import("./parser.zig");
+const ASTPrinter = @import("./visitor/visitor.zig").ASTPrinter;
 
 fn run(data: []const u8) !void {
     std.debug.print("runningg....", .{});
@@ -15,6 +17,7 @@ fn run(data: []const u8) !void {
     var sc = scanner.scanner.init(allocator, data);
     defer sc.deinit();
     var toks = try sc.scan();
+
     while (true) {
         if (toks.next()) |tok| {
             std.debug.print("{}\n ", .{tok});
@@ -33,6 +36,15 @@ fn run(data: []const u8) !void {
             break;
         }
     }
+
+    toks.reset();
+    var p = parser.init(allocator, &toks);
+    var exp = p.parse() catch {
+        std.debug.print("Parser faced error: {s} -> {?}", .{ p.err_msg, p.err_token });
+        return;
+    };
+
+    ASTPrinter.print(exp);
 }
 
 fn run_file(file_name: []const u8) !void {

@@ -94,7 +94,15 @@ pub const scanner = struct {
             '+' => .{ .tt = .plus, .l = null },
             ';' => .{ .tt = .semicolon, .l = null },
             '*' => .{ .tt = .star, .l = null },
-            '/' => .{ .tt = .slash, .l = null },
+            '/' => .{
+                .tt = blk: {
+                    // if (self.check("/")) {
+                    //     while (self.check("/")) {}
+                    // }
+                    break :blk .slash;
+                },
+                .l = null,
+            },
             '!' => .{ .tt = blk: {
                 if (self.check('=')) {
                     break :blk .bang_eq;
@@ -276,9 +284,20 @@ pub const TokenIterator = struct {
         return token;
     }
 
-    pub fn peek(self: TokenIterator) ?Token {
-        if (self.pos >= self.buffer.len) return null;
+    pub fn finished(self: *TokenIterator) bool {
+        return self.pos >= self.buffer.len;
+    }
+
+    pub fn peek(self: *TokenIterator) ?Token {
+        if (self.finished()) return null;
         return self.buffer[self.pos];
+    }
+
+    pub fn prev(self: *TokenIterator) ?Token {
+        if (self.pos == 0) {
+            return null;
+        }
+        return self.buffer[self.pos - 1];
     }
 
     pub fn reset(self: *TokenIterator) void {

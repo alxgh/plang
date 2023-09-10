@@ -13,7 +13,7 @@ pub const Binary = struct {
     e: Expr = .{ .t = .binary },
 
     left: *Expr,
-    op: *Token,
+    op: Token,
     right: *Expr,
 
     pub fn accept(self: *Binary, comptime v: *visitor.Visitor) void {
@@ -25,7 +25,7 @@ pub const BinaryConv = Conv(Binary);
 pub const Literal = struct {
     e: Expr = .{ .t = .literal },
 
-    v: ?*tokens.Token,
+    v: ?tokens.Token,
     pub fn accept(self: *Literal, comptime v: *visitor.Visitor) void {
         v.visitLiteral(self);
     }
@@ -45,7 +45,7 @@ pub const GroupingConv = Conv(Grouping);
 pub const Unary = struct {
     e: Expr = .{ .t = .unary },
 
-    op: *Token,
+    op: Token,
     right: *Expr,
     pub fn accept(self: *Unary, comptime v: *visitor.Visitor) void {
         v.visitUnary(self);

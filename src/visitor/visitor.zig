@@ -64,14 +64,17 @@ pub const ASTPrinter = struct {
 
     pub fn literal(comptime visitor: *Visitor, e: *expr.Literal) void {
         _ = visitor;
-        switch (e.v.?.tt) {
-            .num => {
-                std.debug.print("{d}", .{tokens.LiteralVal(f64).from_lit(e.v.?.literal.?).val});
-            },
-            .str => {
-                std.debug.print("{d}", .{tokens.LiteralVal(f64).from_lit(e.v.?.literal.?).val});
-            },
-            else => unreachable,
+
+        if (e.v) |v| {
+            switch (v.tt) {
+                .num => {
+                    std.debug.print("{d}", .{tokens.LiteralVal(f64).from_lit(e.v.?.literal.?).val});
+                },
+                .str => {
+                    std.debug.print("{d}", .{tokens.LiteralVal(f64).from_lit(e.v.?.literal.?).val});
+                },
+                else => unreachable,
+            }
         }
     }
 
@@ -102,13 +105,13 @@ test "printer" {
     var lup = tokens.Token{ .lexeme = "-", .tt = .minus, .line = 1 };
     var luetl = tokens.LiteralVal(f64){ .val = 123 };
     var luett = tokens.Token{ .lexeme = "123", .line = 1, .tt = .num, .literal = &luetl.literal };
-    var lue = expr.Literal{ .v = &luett };
-    var lu = expr.Unary{ .op = &lup, .right = &lue.e };
+    var lue = expr.Literal{ .v = luett };
+    var lu = expr.Unary{ .op = lup, .right = &lue.e };
     var bop = tokens.Token{ .tt = .star, .lexeme = "*", .line = 1 };
     var rumtl = tokens.LiteralVal(f64){ .val = 45.67 };
     var rumtt = tokens.Token{ .lexeme = "45.67", .line = 1, .tt = .num, .literal = &rumtl.literal };
-    var rum = expr.Literal{ .v = &rumtt };
+    var rum = expr.Literal{ .v = rumtt };
     var ru = expr.Grouping{ .mid = &rum.e };
-    var e = expr.Binary{ .left = &lu.e, .op = &bop, .right = &ru.e };
+    var e = expr.Binary{ .left = &lu.e, .op = bop, .right = &ru.e };
     ASTPrinter.print(&e.e);
 }
