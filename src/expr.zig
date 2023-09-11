@@ -1,7 +1,7 @@
 const std = @import("std");
 const tokens = @import("./tokens.zig");
 const Token = tokens.Token;
-const visitor = @import("./visitor/visitor.zig");
+const Visitor = @import("./visitor/visitor.zig");
 
 pub const ExpType = enum { literal, grouping, unary, binary };
 
@@ -16,7 +16,7 @@ pub const Binary = struct {
     op: Token,
     right: *Expr,
 
-    pub fn accept(self: *Binary, comptime v: *visitor.Visitor) void {
+    pub fn accept(self: *Binary, comptime v: anytype) void {
         v.visitBinary(self);
     }
 };
@@ -26,7 +26,7 @@ pub const Literal = struct {
     e: Expr = .{ .t = .literal },
 
     v: ?tokens.Token,
-    pub fn accept(self: *Literal, comptime v: *visitor.Visitor) void {
+    pub fn accept(self: *Literal, comptime v: anytype) void {
         v.visitLiteral(self);
     }
 };
@@ -36,7 +36,7 @@ pub const Grouping = struct {
     e: Expr = .{ .t = .grouping },
 
     mid: *Expr,
-    pub fn accept(self: *Grouping, comptime v: *visitor.Visitor) void {
+    pub fn accept(self: *Grouping, comptime v: anytype) void {
         v.visitGrouping(self);
     }
 };
@@ -47,7 +47,7 @@ pub const Unary = struct {
 
     op: Token,
     right: *Expr,
-    pub fn accept(self: *Unary, comptime v: *visitor.Visitor) void {
+    pub fn accept(self: *Unary, comptime v: anytype) void {
         v.visitUnary(self);
     }
 };
