@@ -16,8 +16,8 @@ pub const Binary = struct {
     op: Token,
     right: *Expr,
 
-    pub fn accept(self: *Binary, comptime v: anytype) void {
-        v.visitBinary(self);
+    pub fn accept(self: *Binary, v: anytype, comptime T: type) T {
+        return v.visitBinary(self);
     }
 };
 pub const BinaryConv = Conv(Binary);
@@ -26,8 +26,9 @@ pub const Literal = struct {
     e: Expr = .{ .t = .literal },
 
     v: ?tokens.Token,
-    pub fn accept(self: *Literal, comptime v: anytype) void {
-        v.visitLiteral(self);
+
+    pub fn accept(self: *Literal, v: anytype, comptime T: type) T {
+        return v.visitLiteral(self);
     }
 };
 pub const LiteralConv = Conv(Literal);
@@ -36,8 +37,8 @@ pub const Grouping = struct {
     e: Expr = .{ .t = .grouping },
 
     mid: *Expr,
-    pub fn accept(self: *Grouping, comptime v: anytype) void {
-        v.visitGrouping(self);
+    pub fn accept(self: *Grouping, v: anytype, comptime T: type) T {
+        return v.visitGrouping(self);
     }
 };
 pub const GroupingConv = Conv(Grouping);
@@ -47,8 +48,8 @@ pub const Unary = struct {
 
     op: Token,
     right: *Expr,
-    pub fn accept(self: *Unary, comptime v: anytype) void {
-        v.visitUnary(self);
+    pub fn accept(self: *Unary, v: anytype, comptime T: type) T {
+        return v.visitUnary(self);
     }
 };
 pub const UnaryConv = Conv(Unary);

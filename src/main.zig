@@ -2,7 +2,8 @@ const std = @import("std");
 const os = @import("os");
 const scanner = @import("./scanner.zig");
 const parser = @import("./parser.zig");
-const ASTPrinter = @import("./visitor/visitor.zig").ASTPrinter;
+const ASTPrinter = @import("./visitor/printer.zig");
+const Interpreter = @import("./visitor/interpreter.zig");
 
 fn run(data: []const u8) !void {
     std.debug.print("runningg....", .{});
@@ -39,12 +40,29 @@ fn run(data: []const u8) !void {
 
     toks.reset();
     var p = parser.init(allocator, &toks);
+    defer {
+        p.deinit() catch |err| {
+            @panic(@errorName(err));
+        };
+    }
+
     var exp = p.parse() catch {
         std.debug.print("Parser faced error: {s} -> {?}", .{ p.err_msg, p.err_token });
         return;
     };
 
     ASTPrinter.print(exp);
+    var interpreter = Interpreter.init(allocator);
+    var res = interpreter.parse(exp);
+    switch (res.t) {
+        .double => {
+            std.debug.print("final res: {}\n", .{@fieldParentPtr(Interpreter.DoubleResult, "r", res)});
+        },
+        .boolean => {
+            std.debug.print("final res: {}\n", .{@fieldParentPtr(Interpreter.BooleanResult, "r", res)});
+        },
+        else => undefined,
+    }
 }
 
 fn run_file(file_name: []const u8) !void {
@@ -58,6 +76,7 @@ fn run_file(file_name: []const u8) !void {
     }
     var file = try std.fs.cwd().openFile(file_name, .{});
     var data = try file.reader().readAllAlloc(allocator, 1 * 1000 * 1000);
+    defer allocator.free(data);
     try run(data);
 }
 

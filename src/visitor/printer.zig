@@ -4,7 +4,8 @@ const expr = @import("../expr.zig");
 const Visitor = @import("./visitor.zig").Visitor(void);
 const Self = @This();
 pub fn print(e: *expr.Expr) void {
-    comptime var visitor = Visitor{
+    var visitor = Visitor{
+        .ctx = undefined,
         .visitBinaryFn = binary,
         .visitGroupingFn = grouping,
         .visitLiteralFn = literal,
@@ -17,11 +18,13 @@ pub fn print(e: *expr.Expr) void {
     return;
 }
 
-fn binary(comptime visitor: *Visitor, e: *expr.Binary) void {
+fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) void {
+    _ = ctx;
     paren(visitor, e.op.lexeme, .{ e.left, e.right });
 }
 
-fn grouping(comptime visitor: *Visitor, e: *expr.Grouping) void {
+fn grouping(ctx: *anyopaque, visitor: *Visitor, e: *expr.Grouping) void {
+    _ = ctx;
     paren(
         visitor,
         "group",
@@ -29,7 +32,8 @@ fn grouping(comptime visitor: *Visitor, e: *expr.Grouping) void {
     );
 }
 
-pub fn literal(comptime visitor: *Visitor, e: *expr.Literal) void {
+pub fn literal(ctx: *anyopaque, visitor: *Visitor, e: *expr.Literal) void {
+    _ = ctx;
     _ = visitor;
 
     if (e.v) |v| {
@@ -45,11 +49,12 @@ pub fn literal(comptime visitor: *Visitor, e: *expr.Literal) void {
     }
 }
 
-pub fn unary(comptime visitor: *Visitor, e: *expr.Unary) void {
+pub fn unary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Unary) void {
+    _ = ctx;
     paren(visitor, e.op.lexeme, .{e.right});
 }
 
-fn paren(comptime visitor: *Visitor, str: []const u8, exprs: anytype) void {
+fn paren(visitor: *Visitor, str: []const u8, exprs: anytype) void {
     const tinfo = @typeInfo(@TypeOf(exprs));
     if (tinfo != .Struct) {
         @compileError("paren->exprs should be a tuple.");

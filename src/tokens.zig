@@ -93,3 +93,5 @@ pub const Token = struct {
 };
 
 const std = @import("std");
+pub const StringLiteral = LiteralVal([]const u8);
+pub const NumberLiteral = LiteralVal(f64);

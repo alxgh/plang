@@ -1,9 +1,8 @@
 const std = @import("std");
 const tokens = @import("./tokens.zig");
 const reporter = @import("./reporter.zig");
-
-pub const StringLiteral = tokens.LiteralVal([]const u8);
-pub const NumberLiteral = tokens.LiteralVal(f64);
+pub const StringLiteral = tokens.StringLiteral;
+pub const NumberLiteral = tokens.NumberLiteral;
 
 pub const sign = enum {
     pos,

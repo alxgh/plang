@@ -15,7 +15,7 @@ tokens_iterator: *scanner.TokenIterator,
 allocator: std.mem.Allocator,
 err_msg: []const u8 = undefined,
 err_token: ?tokens.Token = null,
-
+root: *expr.Expr = undefined,
 pub fn init(allocator: std.mem.Allocator, t: *scanner.TokenIterator) Self {
     return .{
         .tokens_iterator = t,
@@ -23,8 +23,46 @@ pub fn init(allocator: std.mem.Allocator, t: *scanner.TokenIterator) Self {
     };
 }
 
+pub fn deinit(self: *Self) ErrorSet!void {
+    if (self.root == undefined) {
+        return;
+    }
+
+    var queue = std.ArrayList(*expr.Expr).init(self.allocator);
+    defer queue.deinit();
+    try queue.append(self.root);
+
+    while (queue.popOrNull()) |e| {
+        // std.debug.print("{}\n", .{e});
+        if (e != undefined) {
+            switch (e.t) {
+                .literal => {
+                    self.allocator.destroy(expr.LiteralConv.from(e));
+                },
+                .grouping => {
+                    var ge = expr.GroupingConv.from(e);
+                    try queue.append(ge.mid);
+                    self.allocator.destroy(ge);
+                },
+                .unary => {
+                    var ue = expr.UnaryConv.from(e);
+                    // std.debug.print("{}\n", .{ue});
+                    try queue.append(ue.right);
+                    self.allocator.destroy(ue);
+                },
+                .binary => {
+                    var be = expr.BinaryConv.from(e);
+                    try queue.append(be.right);
+                    try queue.append(be.left);
+                    self.allocator.destroy(be);
+                },
+            }
+        }
+    }
+}
 pub fn parse(self: *Self) ErrorSet!*expr.Expr {
-    return try self.expression();
+    self.root = try self.expression();
+    return self.root;
 }
 
 fn sync(self: *Self) void {
@@ -119,8 +157,6 @@ fn factor(self: *Self) ErrorSet!*expr.Expr {
     while (self.match(.{ .slash, .star })) {
         var op = self.prev();
         var right = try self.factor();
-        std.debug.print("right: {}\n", .{@fieldParentPtr(expr.Literal, "e", right)});
-        std.debug.print("left: {}\n", .{@fieldParentPtr(expr.Literal, "e", e)});
         e = &(try self.binaryExpr(e, op.?, right)).e;
     }
     return e;
