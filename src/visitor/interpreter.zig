@@ -117,14 +117,14 @@ fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
                     if (booleanRes(self, switch (e.op.tt) {
                         .bang_eq => left_double.val != right_double.val,
                         .eq_eq => left_double.val == right_double.val,
-                        else => return undefined,
+                        else => unreachable,
                     })) |res| {
                         return &res.r;
                     } else |_| {
                         return undefined;
                     }
                 },
-                else => return undefined,
+                else => unreachable,
             }
         },
         .string => {},
@@ -153,7 +153,7 @@ fn unary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Unary) *Result {
                 double.val *= -1;
             }
         },
-        else => return undefined,
+        else => unreachable,
     }
     return right;
 }
@@ -171,7 +171,21 @@ fn literal(ctx: *anyopaque, visitor: *Visitor, e: *expr.Literal) *Result {
                 return undefined;
             }
         },
-        else => return undefined,
+        .true_tok => {
+            if (booleanRes(self, true)) |res| {
+                return &res.r;
+            } else |_| {
+                @panic("sakjdkjalsjd");
+            }
+        },
+        .false_tok => {
+            if (booleanRes(self, false)) |res| {
+                return &res.r;
+            } else |_| {
+                @panic("sakjdkjalsjd");
+            }
+        },
+        else => unreachable,
     }
     return undefined;
 }

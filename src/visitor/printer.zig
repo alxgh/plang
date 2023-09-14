@@ -44,6 +44,12 @@ pub fn literal(ctx: *anyopaque, visitor: *Visitor, e: *expr.Literal) void {
             .str => {
                 std.debug.print("{d}", .{tokens.LiteralVal(f64).from_lit(e.v.?.literal.?).val});
             },
+            .true_tok => {
+                std.debug.print("true", .{});
+            },
+            .false_tok => {
+                std.debug.print("false", .{});
+            },
             else => unreachable,
         }
     }
