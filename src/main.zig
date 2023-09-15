@@ -1,9 +1,9 @@
 const std = @import("std");
 const os = @import("os");
 const scanner = @import("./scanner.zig");
-const parser = @import("./parser.zig");
+const Parser = @import("./Parser.zig");
 const ASTPrinter = @import("./visitor/printer.zig");
-const Interpreter = @import("./visitor/interpreter.zig");
+const Interpreter = @import("./visitor/Interpreter.zig");
 
 fn run(data: []const u8) !void {
     std.debug.print("runningg....\n", .{});
@@ -19,27 +19,27 @@ fn run(data: []const u8) !void {
     defer sc.deinit();
     var toks = try sc.scan();
 
-    // while (true) {
-    //     if (toks.next()) |tok| {
-    //         std.debug.print("{}\n ", .{tok});
-    //         if (tok.literal) |lit| {
-    //             switch (tok.tt) {
-    //                 .str, .iden => {
-    //                     std.debug.print("value: {s}\n", .{scanner.StringLiteral.from_lit(lit).val});
-    //                 },
-    //                 .num => {
-    //                     std.debug.print("value: {d}\n", .{scanner.NumberLiteral.from_lit(lit).val});
-    //                 },
-    //                 else => {},
-    //             }
-    //         }
-    //     } else {
-    //         break;
-    //     }
-    // }
+    while (true) {
+        if (toks.next()) |tok| {
+            std.debug.print("{}\n ", .{tok});
+            if (tok.literal) |lit| {
+                switch (tok.tt) {
+                    .str, .iden => {
+                        std.debug.print("value: {s}\n", .{scanner.StringLiteral.from_lit(lit).val});
+                    },
+                    .num => {
+                        std.debug.print("value: {d}\n", .{scanner.NumberLiteral.from_lit(lit).val});
+                    },
+                    else => {},
+                }
+            }
+        } else {
+            break;
+        }
+    }
 
     toks.reset();
-    var p = parser.init(allocator, &toks);
+    var p = Parser.init(allocator, &toks);
     defer {
         p.deinit() catch |err| {
             @panic(@errorName(err));

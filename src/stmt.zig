@@ -1,14 +1,27 @@
 const std = @import("std");
 const expr = @import("./expr.zig");
+const tokens = @import("./tokens.zig");
 
 pub const StmtType = enum {
     expression,
     print,
+    variable,
 };
 
 pub const Stmt = struct {
     t: StmtType,
 };
+
+fn Conv(comptime T: type) type {
+    return struct {
+        pub fn from(e: *Stmt) *T {
+            return @fieldParentPtr(T, "s", e);
+        }
+        pub fn to(be: T) *Stmt {
+            return be.s;
+        }
+    };
+}
 
 pub const Expression = struct {
     s: Stmt = .{ .t = .expression },
@@ -34,13 +47,15 @@ pub const Print = struct {
 
 pub const PrintConv = Conv(Print);
 
-fn Conv(comptime T: type) type {
-    return struct {
-        pub fn from(e: *Stmt) *T {
-            return @fieldParentPtr(T, "s", e);
-        }
-        pub fn to(be: T) *Stmt {
-            return be.s;
-        }
-    };
-}
+pub const Var = struct {
+    s: Stmt = .{ .t = .variable },
+
+    name: tokens.Token,
+    initializer: ?*expr.Expr,
+
+    pub fn accept(self: *Var, v: anytype, comptime T: type) T {
+        return v.visitVarStmt(self);
+    }
+};
+
+pub const VarConv = Conv(Var);

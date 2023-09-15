@@ -1,4 +1,3 @@
-print true==false;
-print 3;
-print 4+2;
-print "bye!";
+var z = 10+(4/2);
+var x = z*2;
+print x;

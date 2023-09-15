@@ -3,11 +3,22 @@ const tokens = @import("./tokens.zig");
 const Token = tokens.Token;
 const Visitor = @import("./visitor/visitor.zig");
 
-pub const ExpType = enum { literal, grouping, unary, binary };
+pub const ExpType = enum { literal, grouping, unary, binary, variable };
 
 pub const Expr = struct {
     t: ExpType,
 };
+
+fn Conv(comptime T: type) type {
+    return struct {
+        pub fn from(e: *Expr) *T {
+            return @fieldParentPtr(T, "e", e);
+        }
+        pub fn to(be: T) *Expr {
+            return be.e;
+        }
+    };
+}
 
 pub const Binary = struct {
     e: Expr = .{ .t = .binary },
@@ -52,15 +63,17 @@ pub const Unary = struct {
         return v.visitUnary(self);
     }
 };
+
 pub const UnaryConv = Conv(Unary);
 
-fn Conv(comptime T: type) type {
-    return struct {
-        pub fn from(e: *Expr) *T {
-            return @fieldParentPtr(T, "e", e);
-        }
-        pub fn to(be: T) *Expr {
-            return be.e;
-        }
-    };
-}
+pub const Variable = struct {
+    e: Expr = .{ .t = .variable },
+
+    name: ?tokens.Token,
+
+    pub fn accept(self: *Variable, v: anytype, comptime T: type) T {
+        return v.visitVariable(self);
+    }
+};
+
+pub const VariableConv = Conv(Variable);

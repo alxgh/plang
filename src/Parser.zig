@@ -43,6 +43,13 @@ pub fn deinit(self: *Self) ErrorSet!void {
                 try queue.append(p.e);
                 self.allocator.destroy(p);
             },
+            .variable => {
+                var p = stmt.VarConv.from(s);
+                if (p.initializer) |initializer| {
+                    try queue.append(initializer);
+                }
+                self.allocator.destroy(p);
+            },
         }
     }
     while (queue.popOrNull()) |e| {
@@ -69,6 +76,10 @@ pub fn deinit(self: *Self) ErrorSet!void {
                     try queue.append(be.left);
                     self.allocator.destroy(be);
                 },
+                .variable => {
+                    var ve = expr.VariableConv.from(e);
+                    self.allocator.destroy(ve);
+                },
             }
         }
     }
@@ -77,10 +88,32 @@ pub fn deinit(self: *Self) ErrorSet!void {
 pub fn parse(self: *Self) ErrorSet!std.ArrayList(*stmt.Stmt) {
     var stmts = std.ArrayList(*stmt.Stmt).init(self.allocator);
     while (!self.tokens_iterator.finished() and self.tokens_iterator.peek().?.tt != .eof) {
-        try stmts.append(try self.statement());
+        try stmts.append(try self.declaration());
     }
     self.stmts = stmts;
     return stmts;
+}
+
+pub fn declaration(self: *Self) !*stmt.Stmt {
+    // errdefer self.sync();
+    if (self.match(.{.var_tok})) {
+        return self.varDeclaration() catch undefined;
+    }
+    return self.statement() catch undefined;
+}
+
+pub fn varDeclaration(self: *Self) !*stmt.Stmt {
+    var name = try self.consume(.iden, "Expect variable name after 'var'");
+    var initializer: ?*expr.Expr = null;
+    if (self.match(.{.eq})) {
+        initializer = try self.expression();
+    }
+    _ = try self.consume(.semicolon, "Expect ';' after var declaration.'");
+    if (self.newVarStmt(name.?, initializer)) |s| {
+        return &s.s;
+    } else |err| {
+        return err;
+    }
 }
 
 pub fn statement(self: *Self) !*stmt.Stmt {
@@ -113,12 +146,16 @@ pub fn exprStmt(self: *Self) !*stmt.Stmt {
 fn sync(self: *Self) void {
     self.tokens_iterator.seekBy(1);
 
-    while (ErrorSet!self.tokens_iterator.finished()) {
-        if (self.prev().tt == .semicolon) return;
+    while (!self.tokens_iterator.finished()) {
+        if (self.prev()) |t| {
+            if (t.tt == .semicolon) {
+                return;
+            }
+        }
         if (self.tokens_iterator.peek()) |token| {
             blk: {
                 switch (token.tt) {
-                    .class, .fn_tok, .var_tok, .for_tok, .if_tok, .while_tok, .ret_tok => return,
+                    .class, .fn_tok, .var_tok, .for_tok, .if_tok, .while_tok, .ret_tok, .print_tok => return,
                     else => break :blk,
                 }
             }
@@ -139,6 +176,14 @@ fn newExprStmt(self: *Self, e: *expr.Expr) ErrorSet!*stmt.Expression {
     var ps = try self.allocator.create(stmt.Expression);
     ps.s = .{ .t = .expression };
     ps.e = e;
+    return ps;
+}
+
+fn newVarStmt(self: *Self, name: tokens.Token, initializer: ?*expr.Expr) ErrorSet!*stmt.Var {
+    var ps = try self.allocator.create(stmt.Var);
+    ps.s = .{ .t = .variable };
+    ps.initializer = initializer;
+    ps.name = name;
     return ps;
 }
 
@@ -171,6 +216,13 @@ fn litExpr(self: *Self, t: tokens.Token) ErrorSet!*expr.Literal {
     ge.e = expr.Expr{ .t = .literal };
     ge.v = t;
     return ge;
+}
+
+fn varExpr(self: *Self, name: tokens.Token) ErrorSet!*expr.Variable {
+    var ve = try self.allocator.create(expr.Variable);
+    ve.e = expr.Expr{ .t = .variable };
+    ve.name = name;
+    return ve;
 }
 
 fn expression(self: *Self) ErrorSet!*expr.Expr {
@@ -236,6 +288,11 @@ fn primary(self: *Self) ErrorSet!*expr.Expr {
     if (self.match(.{ .false_tok, .num, .str, .true_tok, .nil_tok })) {
         var lit = try self.litExpr(self.prev().?);
         return &lit.e;
+    }
+
+    if (self.match(.{.iden})) {
+        var variable = try self.varExpr(self.prev().?);
+        return &variable.e;
     }
 
     if (self.match(.{.l_paren})) {

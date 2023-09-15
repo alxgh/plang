@@ -2,6 +2,7 @@ const std = @import("std");
 const expr = @import("../expr.zig");
 const stmt = @import("../stmt.zig");
 const tokens = @import("../tokens.zig");
+const Env = @import("../Env.zig");
 
 const ResultType = enum {
     double,
@@ -11,6 +12,7 @@ const ResultType = enum {
 
 const Result = struct {
     t: ResultType,
+    env_val: Env.Value = Env.Value{ .t = .boolean },
 };
 
 fn ResultObject(comptime T: type) type {
@@ -54,10 +56,12 @@ fn strRes(self: *Self, val: StringValueType) !*StringResult {
 const Visitor = @import("./visitor.zig").Visitor(*Result);
 
 allocator: std.mem.Allocator,
+env: Env,
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
         .allocator = allocator,
+        .env = Env.init(allocator),
     };
 }
 
@@ -68,17 +72,21 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitGroupingFn = grouping,
         .visitLiteralFn = literal,
         .visitUnaryFn = unary,
+        .visitVariableFn = variable,
 
         .visitPrintStmtFn = printStmt,
         .visitExprStmtFn = exprStmt,
+        .visitVarStmtFn = varStmt,
     };
 
     for (stmts.items) |s| {
         var r = visitor.acceptStmt(s);
-        switch (r.t) {
-            .boolean => self.allocator.destroy(@fieldParentPtr(BooleanResult, "r", r)),
-            .string => self.allocator.destroy(@fieldParentPtr(StringResult, "r", r)),
-            .double => self.allocator.destroy(@fieldParentPtr(DoubleResult, "r", r)),
+        if (r != undefined) {
+            switch (r.t) {
+                .boolean => self.allocator.destroy(@fieldParentPtr(BooleanResult, "r", r)),
+                .string => self.allocator.destroy(@fieldParentPtr(StringResult, "r", r)),
+                .double => self.allocator.destroy(@fieldParentPtr(DoubleResult, "r", r)),
+            }
         }
     }
 }
@@ -109,6 +117,34 @@ fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {
         },
     }
     return out;
+}
+
+fn varStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Var) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var value: ?*Env.Value = null;
+    if (s.initializer != null) {
+        var res = self.eval(visitor, s.initializer.?);
+        res.env_val.t = @enumFromInt(@intFromEnum(res.t));
+        value = &res.env_val;
+    }
+    self.env.define(s.name.lexeme, value) catch undefined;
+    return undefined;
+}
+
+fn variable(ctx: *anyopaque, visitor: *Visitor, e: *expr.Variable) *Result {
+    _ = visitor;
+
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var value = self.env.get(e.name.?.lexeme);
+    if (value) |val| {
+        return @fieldParentPtr(Result, "env_val", val);
+        // return switch (val.t) {
+        //     .boolean => @fieldParentPtr(BooleanResult, "r", r),
+        //     .string => @fieldParentPtr(StringResult, "r", r),
+        //     .double => @fieldParentPtr(DoubleResult, "r", r),
+        // };
+    }
+    return undefined;
 }
 
 fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
