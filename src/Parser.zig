@@ -80,6 +80,11 @@ pub fn deinit(self: *Self) ErrorSet!void {
                     var ve = expr.VariableConv.from(e);
                     self.allocator.destroy(ve);
                 },
+                .assign => {
+                    var ae = expr.AssignConv.from(e);
+                    try queue.append(ae.value);
+                    self.allocator.destroy(ae);
+                },
             }
         }
     }
@@ -225,8 +230,31 @@ fn varExpr(self: *Self, name: tokens.Token) ErrorSet!*expr.Variable {
     return ve;
 }
 
+fn assignExpr(self: *Self, name: tokens.Token, value: *expr.Expr) ErrorSet!*expr.Assign {
+    var ae = try self.allocator.create(expr.Assign);
+    ae.e = expr.Expr{ .t = .assign };
+    ae.name = name;
+    ae.value = value;
+    return ae;
+}
+
 fn expression(self: *Self) ErrorSet!*expr.Expr {
-    return try self.equality();
+    return try self.assignment();
+}
+
+fn assignment(self: *Self) ErrorSet!*expr.Expr {
+    var e = try self.equality();
+    if (self.match(.{.eq})) {
+        var eq = self.prev();
+        var val = try self.assignment();
+        if (e.t == .variable) {
+            var name = expr.VariableConv.from(e).name;
+
+            return &(try self.assignExpr(name.?, val)).e;
+        }
+        try self.panic(eq, "Invalid assignment target.");
+    }
+    return e;
 }
 
 fn equality(self: *Self) ErrorSet!*expr.Expr {

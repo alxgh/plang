@@ -3,7 +3,7 @@ const tokens = @import("./tokens.zig");
 const Token = tokens.Token;
 const Visitor = @import("./visitor/visitor.zig");
 
-pub const ExpType = enum { literal, grouping, unary, binary, variable };
+pub const ExpType = enum { literal, grouping, unary, binary, variable, assign };
 
 pub const Expr = struct {
     t: ExpType,
@@ -77,3 +77,16 @@ pub const Variable = struct {
 };
 
 pub const VariableConv = Conv(Variable);
+
+pub const Assign = struct {
+    e: Expr = .{ .t = .assign },
+
+    name: ?tokens.Token,
+    value: *Expr,
+
+    pub fn accept(self: *Assign, v: anytype, comptime T: type) T {
+        return v.visitAssign(self);
+    }
+};
+
+pub const AssignConv = Conv(Assign);

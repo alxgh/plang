@@ -7,11 +7,15 @@ pub fn Visitor(comptime resultT: type) type {
     return struct {
         const Self = @This();
         ctx: *anyopaque,
+        // expressions
         visitBinaryFn: *const fn (*anyopaque, *Self, *expr.Binary) resultT,
         visitGroupingFn: *const fn (*anyopaque, *Self, *expr.Grouping) resultT,
         visitLiteralFn: *const fn (*anyopaque, *Self, *expr.Literal) resultT,
         visitUnaryFn: *const fn (*anyopaque, *Self, *expr.Unary) resultT,
         visitVariableFn: *const fn (*anyopaque, *Self, *expr.Variable) resultT,
+        visitAssignFn: *const fn (*anyopaque, *Self, *expr.Assign) resultT,
+
+        // statements
         visitExprStmtFn: *const fn (*anyopaque, *Self, *stmt.Expression) resultT,
         visitPrintStmtFn: *const fn (*anyopaque, *Self, *stmt.Print) resultT,
         visitVarStmtFn: *const fn (*anyopaque, *Self, *stmt.Var) resultT,
@@ -36,6 +40,10 @@ pub fn Visitor(comptime resultT: type) type {
             return self.visitVariableFn(self.ctx, self, e);
         }
 
+        pub fn visitAssign(self: *Self, e: *expr.Assign) resultT {
+            return self.visitAssignFn(self.ctx, self, e);
+        }
+
         pub fn acceptExpr(self: *Self, e: *expr.Expr) resultT {
             return switch (e.t) {
                 .literal => expr.LiteralConv.from(e).accept(self, resultT),
@@ -43,6 +51,7 @@ pub fn Visitor(comptime resultT: type) type {
                 .grouping => expr.GroupingConv.from(e).accept(self, resultT),
                 .unary => expr.UnaryConv.from(e).accept(self, resultT),
                 .variable => expr.VariableConv.from(e).accept(self, resultT),
+                .assign => expr.AssignConv.from(e).accept(self, resultT),
             };
         }
 

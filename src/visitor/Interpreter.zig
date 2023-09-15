@@ -53,6 +53,10 @@ fn strRes(self: *Self, val: StringValueType) !*StringResult {
     return str_result;
 }
 
+fn resToEnv(t: ResultType) Env.ValueType {
+    return @enumFromInt(@intFromEnum(t));
+}
+
 const Visitor = @import("./visitor.zig").Visitor(*Result);
 
 allocator: std.mem.Allocator,
@@ -73,6 +77,7 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitLiteralFn = literal,
         .visitUnaryFn = unary,
         .visitVariableFn = variable,
+        .visitAssignFn = assign,
 
         .visitPrintStmtFn = printStmt,
         .visitExprStmtFn = exprStmt,
@@ -124,7 +129,7 @@ fn varStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Var) *Result {
     var value: ?*Env.Value = null;
     if (s.initializer != null) {
         var res = self.eval(visitor, s.initializer.?);
-        res.env_val.t = @enumFromInt(@intFromEnum(res.t));
+        res.env_val.t = resToEnv(res.t);
         value = &res.env_val;
     }
     self.env.define(s.name.lexeme, value) catch undefined;
@@ -280,5 +285,14 @@ fn literal(ctx: *anyopaque, visitor: *Visitor, e: *expr.Literal) *Result {
         },
         else => unreachable,
     }
+    return undefined;
+}
+
+fn assign(ctx: *anyopaque, visitor: *Visitor, e: *expr.Assign) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var res = self.eval(visitor, e.value);
+    res.env_val.t = resToEnv(res.t);
+    var value = &res.env_val;
+    self.env.define(e.name.?.lexeme, value) catch undefined;
     return undefined;
 }
