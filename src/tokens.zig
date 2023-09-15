@@ -40,6 +40,7 @@ pub const Tokens = enum(u64) {
     this,
     var_tok,
     while_tok,
+    print_tok,
 
     eof,
 };
@@ -60,6 +61,7 @@ pub const keywords = std.ComptimeStringMap(Tokens, .{
     .{ "false", .false_tok },
     .{ "var", .var_tok },
     .{ "while", .while_tok },
+    .{ "print", .print_tok },
 });
 
 pub const literal = struct {};

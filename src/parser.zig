@@ -1,5 +1,6 @@
 const std = @import("std");
 const scanner = @import("./scanner.zig");
+const stmt = @import("./stmt.zig");
 const expr = @import("./expr.zig");
 const tokens = @import("./tokens.zig");
 
@@ -15,7 +16,9 @@ tokens_iterator: *scanner.TokenIterator,
 allocator: std.mem.Allocator,
 err_msg: []const u8 = undefined,
 err_token: ?tokens.Token = null,
-root: *expr.Expr = undefined,
+root: ?*expr.Expr = null,
+stmts: std.ArrayList(*stmt.Stmt) = undefined,
+
 pub fn init(allocator: std.mem.Allocator, t: *scanner.TokenIterator) Self {
     return .{
         .tokens_iterator = t,
@@ -24,14 +27,24 @@ pub fn init(allocator: std.mem.Allocator, t: *scanner.TokenIterator) Self {
 }
 
 pub fn deinit(self: *Self) ErrorSet!void {
-    if (self.root == undefined) {
-        return;
-    }
-
+    defer self.stmts.deinit();
     var queue = std.ArrayList(*expr.Expr).init(self.allocator);
     defer queue.deinit();
-    try queue.append(self.root);
 
+    for (self.stmts.items) |s| {
+        switch (s.t) {
+            .print => {
+                var p = stmt.PrintConv.from(s);
+                try queue.append(p.e);
+                self.allocator.destroy(p);
+            },
+            .expression => {
+                var p = stmt.ExpressionConv.from(s);
+                try queue.append(p.e);
+                self.allocator.destroy(p);
+            },
+        }
+    }
     while (queue.popOrNull()) |e| {
         // std.debug.print("{}\n", .{e});
         if (e != undefined) {
@@ -60,9 +73,41 @@ pub fn deinit(self: *Self) ErrorSet!void {
         }
     }
 }
-pub fn parse(self: *Self) ErrorSet!*expr.Expr {
-    self.root = try self.expression();
-    return self.root;
+
+pub fn parse(self: *Self) ErrorSet!std.ArrayList(*stmt.Stmt) {
+    var stmts = std.ArrayList(*stmt.Stmt).init(self.allocator);
+    while (!self.tokens_iterator.finished() and self.tokens_iterator.peek().?.tt != .eof) {
+        try stmts.append(try self.statement());
+    }
+    self.stmts = stmts;
+    return stmts;
+}
+
+pub fn statement(self: *Self) !*stmt.Stmt {
+    if (self.match(.{.print_tok})) {
+        return try self.printStmt();
+    }
+    return try self.exprStmt();
+}
+
+pub fn printStmt(self: *Self) !*stmt.Stmt {
+    var e = try self.expression();
+    _ = try self.consume(.semicolon, "Expect ';' after value");
+    if (self.newPrintStmt(e)) |s| {
+        return &s.s;
+    } else |err| {
+        return err;
+    }
+}
+
+pub fn exprStmt(self: *Self) !*stmt.Stmt {
+    var e = try self.expression();
+    _ = try self.consume(.semicolon, "Expect ';' after value");
+    if (self.newExprStmt(e)) |s| {
+        return &s.s;
+    } else |err| {
+        return err;
+    }
 }
 
 fn sync(self: *Self) void {
@@ -81,6 +126,20 @@ fn sync(self: *Self) void {
 
         self.tokens_iterator.seekBy(1);
     }
+}
+
+fn newPrintStmt(self: *Self, e: *expr.Expr) ErrorSet!*stmt.Print {
+    var ps = try self.allocator.create(stmt.Print);
+    ps.s = .{ .t = .print };
+    ps.e = e;
+    return ps;
+}
+
+fn newExprStmt(self: *Self, e: *expr.Expr) ErrorSet!*stmt.Expression {
+    var ps = try self.allocator.create(stmt.Expression);
+    ps.s = .{ .t = .expression };
+    ps.e = e;
+    return ps;
 }
 
 fn binaryExpr(self: *Self, l: *expr.Expr, op: tokens.Token, r: *expr.Expr) ErrorSet!*expr.Binary {

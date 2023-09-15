@@ -1,6 +1,8 @@
 const std = @import("std");
 const expr = @import("../expr.zig");
+const stmt = @import("../stmt.zig");
 const tokens = @import("../tokens.zig");
+
 pub fn Visitor(comptime resultT: type) type {
     return struct {
         const Self = @This();
@@ -9,6 +11,8 @@ pub fn Visitor(comptime resultT: type) type {
         visitGroupingFn: *const fn (*anyopaque, *Self, *expr.Grouping) resultT,
         visitLiteralFn: *const fn (*anyopaque, *Self, *expr.Literal) resultT,
         visitUnaryFn: *const fn (*anyopaque, *Self, *expr.Unary) resultT,
+        visitExprStmtFn: *const fn (*anyopaque, *Self, *stmt.Expression) resultT,
+        visitPrintStmtFn: *const fn (*anyopaque, *Self, *stmt.Print) resultT,
 
         pub fn visitBinary(self: *Self, e: *expr.Binary) resultT {
             return self.visitBinaryFn(self.ctx, self, e);
@@ -26,12 +30,27 @@ pub fn Visitor(comptime resultT: type) type {
             return self.visitUnaryFn(self.ctx, self, e);
         }
 
-        pub fn accept(self: *Self, e: *expr.Expr) resultT {
+        pub fn acceptExpr(self: *Self, e: *expr.Expr) resultT {
             return switch (e.t) {
                 .literal => expr.LiteralConv.from(e).accept(self, resultT),
                 .binary => expr.BinaryConv.from(e).accept(self, resultT),
                 .grouping => expr.GroupingConv.from(e).accept(self, resultT),
                 .unary => expr.UnaryConv.from(e).accept(self, resultT),
+            };
+        }
+
+        pub fn visitPrintStmt(self: *Self, s: *stmt.Print) resultT {
+            return self.visitPrintStmtFn(self.ctx, self, s);
+        }
+
+        pub fn visitExprStmt(self: *Self, s: *stmt.Expression) resultT {
+            return self.visitExprStmtFn(self.ctx, self, s);
+        }
+
+        pub fn acceptStmt(self: *Self, s: *stmt.Stmt) resultT {
+            return switch (s.t) {
+                .expression => stmt.ExpressionConv.from(s).accept(self, resultT),
+                .print => stmt.PrintConv.from(s).accept(self, resultT),
             };
         }
     };

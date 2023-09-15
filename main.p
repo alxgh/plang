@@ -1,1 +1,4 @@
-((4+4)/2+10)<3
+print true==false;
+print 3;
+print 4+2;
+print "bye!";

@@ -1,5 +1,6 @@
 const std = @import("std");
 const expr = @import("../expr.zig");
+const stmt = @import("../stmt.zig");
 const tokens = @import("../tokens.zig");
 
 const ResultType = enum {
@@ -21,10 +22,11 @@ fn ResultObject(comptime T: type) type {
 
 const DoubleValueType = f64;
 const BooleanValueType = bool;
+const StringValueType = []const u8;
 
 pub const DoubleResult = ResultObject(DoubleValueType);
 pub const BooleanResult = ResultObject(BooleanValueType);
-pub const StringResult = ResultObject([]const u8);
+pub const StringResult = ResultObject(StringValueType);
 
 const Self = @This();
 
@@ -42,6 +44,13 @@ fn booleanRes(self: *Self, val: BooleanValueType) !*BooleanResult {
     return double_result;
 }
 
+fn strRes(self: *Self, val: StringValueType) !*StringResult {
+    var str_result = try self.allocator.create(StringResult);
+    str_result.r = Result{ .t = .string };
+    str_result.val = val;
+    return str_result;
+}
+
 const Visitor = @import("./visitor.zig").Visitor(*Result);
 
 allocator: std.mem.Allocator,
@@ -52,21 +61,54 @@ pub fn init(allocator: std.mem.Allocator) Self {
     };
 }
 
-pub fn parse(self: *Self, e: *expr.Expr) *Result {
+pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
     var visitor = Visitor{
         .ctx = self,
         .visitBinaryFn = binary,
         .visitGroupingFn = grouping,
         .visitLiteralFn = literal,
         .visitUnaryFn = unary,
+
+        .visitPrintStmtFn = printStmt,
+        .visitExprStmtFn = exprStmt,
     };
 
-    return visitor.accept(e);
+    for (stmts.items) |s| {
+        var r = visitor.acceptStmt(s);
+        switch (r.t) {
+            .boolean => self.allocator.destroy(@fieldParentPtr(BooleanResult, "r", r)),
+            .string => self.allocator.destroy(@fieldParentPtr(StringResult, "r", r)),
+            .double => self.allocator.destroy(@fieldParentPtr(DoubleResult, "r", r)),
+        }
+    }
 }
 
 fn eval(self: *Self, visitor: *Visitor, e: *expr.Expr) *Result {
     _ = self;
-    return visitor.accept(e);
+    return visitor.acceptExpr(e);
+}
+
+fn exprStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Expression) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    return self.eval(visitor, s.e);
+}
+
+fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var out = self.eval(visitor, s.e);
+    // printing somethign here...
+    switch (out.t) {
+        .double => {
+            std.debug.print("{d}\n", .{@fieldParentPtr(DoubleResult, "r", out).val});
+        },
+        .boolean => {
+            std.debug.print("{}\n", .{@fieldParentPtr(BooleanResult, "r", out).val});
+        },
+        .string => {
+            std.debug.print("{s}\n", .{@fieldParentPtr(StringResult, "r", out).val});
+        },
+    }
+    return out;
 }
 
 fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
@@ -83,6 +125,10 @@ fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
         .double => {
             var left_double = @fieldParentPtr(DoubleResult, "r", left);
             var right_double = @fieldParentPtr(DoubleResult, "r", right);
+            defer {
+                self.allocator.destroy(left_double);
+                self.allocator.destroy(right_double);
+            }
             switch (e.op.tt) {
                 else => unreachable,
                 .minus, .plus, .star, .slash => {
@@ -110,13 +156,17 @@ fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
             }
         },
         .boolean => {
-            var left_double = @fieldParentPtr(DoubleResult, "r", left);
-            var right_double = @fieldParentPtr(DoubleResult, "r", right);
+            var left_boolean = @fieldParentPtr(BooleanResult, "r", left);
+            var right_boolean = @fieldParentPtr(BooleanResult, "r", right);
+            defer {
+                self.allocator.destroy(left_boolean);
+                self.allocator.destroy(right_boolean);
+            }
             switch (e.op.tt) {
                 .bang_eq, .eq_eq => {
                     if (booleanRes(self, switch (e.op.tt) {
-                        .bang_eq => left_double.val != right_double.val,
-                        .eq_eq => left_double.val == right_double.val,
+                        .bang_eq => left_boolean.val != right_boolean.val,
+                        .eq_eq => left_boolean.val == right_boolean.val,
                         else => unreachable,
                     })) |res| {
                         return &res.r;
@@ -162,7 +212,14 @@ fn literal(ctx: *anyopaque, visitor: *Visitor, e: *expr.Literal) *Result {
     const self: *Self = @ptrCast(@alignCast(ctx));
     _ = visitor;
     switch (e.v.?.tt) {
-        .str => {},
+        .str => {
+            var lit = tokens.StringLiteral.from_lit(e.v.?.literal.?);
+            if (strRes(self, lit.val)) |res| {
+                return &res.r;
+            } else |_| {
+                return undefined;
+            }
+        },
         .num => {
             var lit = tokens.NumberLiteral.from_lit(e.v.?.literal.?);
             if (doubleRes(self, lit.val)) |res| {
