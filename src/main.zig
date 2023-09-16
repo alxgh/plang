@@ -53,7 +53,8 @@ fn run(data: []const u8) !void {
 
     // ASTPrinter.print(exp);
     var interpreter = Interpreter.init(allocator);
-    _ = interpreter.interpret(stmts);
+    defer interpreter.deinit();
+    interpreter.interpret(stmts);
 }
 
 fn run_file(file_name: []const u8) !void {

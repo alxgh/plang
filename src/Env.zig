@@ -22,8 +22,14 @@ pub fn init(allocator: std.mem.Allocator) Self {
     };
 }
 
-pub fn deinit(self: *Self) void {
-    _ = self;
+pub fn deinit(self: *Self, comptime f: fn (*Value) void) void {
+    var it = self.values.iterator();
+    while (it.next()) |e| {
+        if (e.value_ptr.*) |v| {
+            f(v);
+        }
+    }
+    self.values.deinit();
     return;
 }
 
