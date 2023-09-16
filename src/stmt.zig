@@ -6,6 +6,7 @@ pub const StmtType = enum {
     expression,
     print,
     variable,
+    block,
 };
 
 pub const Stmt = struct {
@@ -59,3 +60,14 @@ pub const Var = struct {
 };
 
 pub const VarConv = Conv(Var);
+
+pub const Block = struct {
+    s: Stmt = .{ .t = .block },
+    statements: std.ArrayList(*Stmt),
+
+    pub fn accept(self: *Block, v: anytype, comptime T: type) T {
+        return v.visitBlockStmt(self);
+    }
+};
+
+pub const BlockConv = Conv(Block);

@@ -9,6 +9,7 @@ const ResultType = enum {
     double,
     boolean,
     string,
+    nil,
 };
 
 fn decr(r: *Result) void {
@@ -16,6 +17,7 @@ fn decr(r: *Result) void {
         .boolean => @fieldParentPtr(BooleanResult, "r", r).rc.decr(),
         .string => @fieldParentPtr(StringResult, "r", r).rc.decr(),
         .double => @fieldParentPtr(DoubleResult, "r", r).rc.decr(),
+        .nil => @fieldParentPtr(NilResult, "r", r).rc.decr(),
     }
 }
 
@@ -24,6 +26,7 @@ fn incr(r: *Result) void {
         .boolean => @fieldParentPtr(BooleanResult, "r", r).rc.incr(),
         .string => @fieldParentPtr(StringResult, "r", r).rc.incr(),
         .double => @fieldParentPtr(DoubleResult, "r", r).rc.incr(),
+        .nil => @fieldParentPtr(NilResult, "r", r).rc.incr(),
     }
 }
 
@@ -62,6 +65,7 @@ const StringValueType = []const u8;
 pub const DoubleResult = ResultObject(DoubleValueType);
 pub const BooleanResult = ResultObject(BooleanValueType);
 pub const StringResult = ResultObject(StringValueType);
+pub const NilResult = ResultObject(void);
 
 const Self = @This();
 
@@ -77,6 +81,10 @@ fn strRes(self: *Self, val: StringValueType) !*StringResult {
     return StringResult.alloc(self.allocator, .{ .t = .string }, val);
 }
 
+fn nilRes(self: *Self) !*NilResult {
+    return NilResult.alloc(self.allocator, .{ .t = .nil }, undefined);
+}
+
 fn resToEnv(t: ResultType) Env.ValueType {
     return @enumFromInt(@intFromEnum(t));
 }
@@ -89,7 +97,7 @@ env: Env,
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
         .allocator = allocator,
-        .env = Env.init(allocator),
+        .env = Env.init(allocator, null),
     };
 }
 
@@ -106,6 +114,7 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitPrintStmtFn = printStmt,
         .visitExprStmtFn = exprStmt,
         .visitVarStmtFn = varStmt,
+        .visitBlockStmtFn = blockStmt,
     };
 
     for (stmts.items) |s| {
@@ -146,6 +155,9 @@ fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {
         .string => {
             std.debug.print("{s}\n", .{@fieldParentPtr(StringResult, "r", out).val});
         },
+        .nil => {
+            std.debug.print("nil\n", .{});
+        },
     }
     return out;
 }
@@ -162,6 +174,22 @@ fn varStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Var) *Result {
     }
     self.env.define(s.name.lexeme, value) catch undefined;
     return res;
+}
+
+fn blockStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Block) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var prev_env = self.env;
+    defer {
+        self.env = prev_env;
+    }
+    self.env = Env.init(self.allocator, &prev_env);
+    defer self.env.deinit(envdeinit);
+    for (s.statements.items) |statement| {
+        var r = visitor.acceptStmt(statement);
+        decr(r);
+    }
+    var r = nilRes(self) catch @panic("shit");
+    return &r.r;
 }
 
 fn variable(ctx: *anyopaque, visitor: *Visitor, e: *expr.Variable) *Result {
@@ -248,7 +276,7 @@ fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
                 else => unreachable,
             }
         },
-        .string => {},
+        .string, .nil => {},
     }
     unreachable;
 }
@@ -333,7 +361,11 @@ fn assign(ctx: *anyopaque, visitor: *Visitor, e: *expr.Assign) *Result {
     var res = self.eval(visitor, e.value);
     res.env_val.t = resToEnv(res.t);
     var value = &res.env_val;
-    self.env.define(e.name.?.lexeme, value) catch undefined;
+    var prev = self.env.assign(e.name.?.lexeme, value) catch @panic("unhandled");
+    if (prev) |val| {
+        var r = @fieldParentPtr(Result, "env_val", val);
+        decr(r);
+    }
     incr(res);
     return res;
 }

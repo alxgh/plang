@@ -31,7 +31,14 @@ pub fn deinit(self: *Self) ErrorSet!void {
     var queue = std.ArrayList(*expr.Expr).init(self.allocator);
     defer queue.deinit();
 
+    var stmtsq = std.ArrayList(*stmt.Stmt).init(self.allocator);
+    defer stmtsq.deinit();
+
     for (self.stmts.items) |s| {
+        try stmtsq.append(s);
+    }
+
+    while (stmtsq.popOrNull()) |s| {
         switch (s.t) {
             .print => {
                 var p = stmt.PrintConv.from(s);
@@ -50,42 +57,48 @@ pub fn deinit(self: *Self) ErrorSet!void {
                 }
                 self.allocator.destroy(p);
             },
+            .block => {
+                var p = stmt.BlockConv.from(s);
+                for (p.statements.items) |sp| {
+                    try stmtsq.append(sp);
+                }
+                p.statements.deinit();
+                self.allocator.destroy(p);
+            }, // TODO
         }
     }
     while (queue.popOrNull()) |e| {
         // std.debug.print("{}\n", .{e});
-        if (e != undefined) {
-            switch (e.t) {
-                .literal => {
-                    self.allocator.destroy(expr.LiteralConv.from(e));
-                },
-                .grouping => {
-                    var ge = expr.GroupingConv.from(e);
-                    try queue.append(ge.mid);
-                    self.allocator.destroy(ge);
-                },
-                .unary => {
-                    var ue = expr.UnaryConv.from(e);
-                    // std.debug.print("{}\n", .{ue});
-                    try queue.append(ue.right);
-                    self.allocator.destroy(ue);
-                },
-                .binary => {
-                    var be = expr.BinaryConv.from(e);
-                    try queue.append(be.right);
-                    try queue.append(be.left);
-                    self.allocator.destroy(be);
-                },
-                .variable => {
-                    var ve = expr.VariableConv.from(e);
-                    self.allocator.destroy(ve);
-                },
-                .assign => {
-                    var ae = expr.AssignConv.from(e);
-                    try queue.append(ae.value);
-                    self.allocator.destroy(ae);
-                },
-            }
+        switch (e.t) {
+            .literal => {
+                self.allocator.destroy(expr.LiteralConv.from(e));
+            },
+            .grouping => {
+                var ge = expr.GroupingConv.from(e);
+                try queue.append(ge.mid);
+                self.allocator.destroy(ge);
+            },
+            .unary => {
+                var ue = expr.UnaryConv.from(e);
+                // std.debug.print("{}\n", .{ue});
+                try queue.append(ue.right);
+                self.allocator.destroy(ue);
+            },
+            .binary => {
+                var be = expr.BinaryConv.from(e);
+                try queue.append(be.right);
+                try queue.append(be.left);
+                self.allocator.destroy(be);
+            },
+            .variable => {
+                var ve = expr.VariableConv.from(e);
+                self.allocator.destroy(ve);
+            },
+            .assign => {
+                var ae = expr.AssignConv.from(e);
+                try queue.append(ae.value);
+                self.allocator.destroy(ae);
+            },
         }
     }
 }
@@ -99,7 +112,7 @@ pub fn parse(self: *Self) ErrorSet!std.ArrayList(*stmt.Stmt) {
     return stmts;
 }
 
-pub fn declaration(self: *Self) !*stmt.Stmt {
+pub fn declaration(self: *Self) ErrorSet!*stmt.Stmt {
     // errdefer self.sync();
     if (self.match(.{.var_tok})) {
         return self.varDeclaration() catch undefined;
@@ -107,7 +120,7 @@ pub fn declaration(self: *Self) !*stmt.Stmt {
     return self.statement() catch undefined;
 }
 
-pub fn varDeclaration(self: *Self) !*stmt.Stmt {
+pub fn varDeclaration(self: *Self) ErrorSet!*stmt.Stmt {
     var name = try self.consume(.iden, "Expect variable name after 'var'");
     var initializer: ?*expr.Expr = null;
     if (self.match(.{.eq})) {
@@ -121,14 +134,17 @@ pub fn varDeclaration(self: *Self) !*stmt.Stmt {
     }
 }
 
-pub fn statement(self: *Self) !*stmt.Stmt {
+pub fn statement(self: *Self) ErrorSet!*stmt.Stmt {
     if (self.match(.{.print_tok})) {
         return try self.printStmt();
+    }
+    if (self.match(.{.l_brace})) {
+        return try self.blockStmt();
     }
     return try self.exprStmt();
 }
 
-pub fn printStmt(self: *Self) !*stmt.Stmt {
+pub fn printStmt(self: *Self) ErrorSet!*stmt.Stmt {
     var e = try self.expression();
     _ = try self.consume(.semicolon, "Expect ';' after value");
     if (self.newPrintStmt(e)) |s| {
@@ -138,7 +154,20 @@ pub fn printStmt(self: *Self) !*stmt.Stmt {
     }
 }
 
-pub fn exprStmt(self: *Self) !*stmt.Stmt {
+pub fn blockStmt(self: *Self) ErrorSet!*stmt.Stmt {
+    var bs = try self.newBlockStmt();
+
+    while (!self.tokens_iterator.finished() and !self.check(.r_brace)) {
+        var s = try self.declaration();
+        try bs.statements.append(s);
+    }
+
+    _ = try self.consume(.r_brace, "Expect } at the end of the block");
+
+    return &bs.s;
+}
+
+pub fn exprStmt(self: *Self) ErrorSet!*stmt.Stmt {
     var e = try self.expression();
     _ = try self.consume(.semicolon, "Expect ';' after value");
     if (self.newExprStmt(e)) |s| {
@@ -168,6 +197,13 @@ fn sync(self: *Self) void {
 
         self.tokens_iterator.seekBy(1);
     }
+}
+
+fn newBlockStmt(self: *Self) ErrorSet!*stmt.Block {
+    var bs = try self.allocator.create(stmt.Block);
+    bs.s = .{ .t = .block };
+    bs.statements = std.ArrayList(*stmt.Stmt).init(self.allocator);
+    return bs;
 }
 
 fn newPrintStmt(self: *Self, e: *expr.Expr) ErrorSet!*stmt.Print {
@@ -249,7 +285,8 @@ fn assignment(self: *Self) ErrorSet!*expr.Expr {
         var val = try self.assignment();
         if (e.t == .variable) {
             var name = expr.VariableConv.from(e).name;
-
+            // release the memory as the expression is not used anymore.
+            self.allocator.destroy(expr.VariableConv.from(e));
             return &(try self.assignExpr(name.?, val)).e;
         }
         try self.panic(eq, "Invalid assignment target.");

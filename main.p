@@ -1,12 +1,10 @@
-var o;
-o = 13;
-var z = 12;
-print z;
-var x = -z;
+var x = 13;
 print x;
-print z;
-var p = false;
-print p;
-var j = !p;
-print j;
-print p;
+{
+    print x;
+    x = 12;
+    print x;
+    var x = 14;
+    print x;
+}
+print x;
