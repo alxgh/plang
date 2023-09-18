@@ -115,6 +115,7 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitExprStmtFn = exprStmt,
         .visitVarStmtFn = varStmt,
         .visitBlockStmtFn = blockStmt,
+        .visitIfStmtFn = ifStmt,
     };
 
     for (stmts.items) |s| {
@@ -139,6 +140,30 @@ fn eval(self: *Self, visitor: *Visitor, e: *expr.Expr) *Result {
 fn exprStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Expression) *Result {
     const self: *Self = @ptrCast(@alignCast(ctx));
     return self.eval(visitor, s.e);
+}
+
+fn ifStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.If) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+
+    var cond = self.eval(visitor, s.cond);
+    defer decr(cond);
+
+    if (cond.t == .boolean) {
+        var condBool = @fieldParentPtr(BooleanResult, "r", cond);
+        if (condBool.val) {
+            return visitor.acceptStmt(s.then_branch);
+        }
+    }
+
+    if (s.else_branch) |else_branch| {
+        return visitor.acceptStmt(else_branch);
+    }
+
+    if (nilRes(self)) |r| {
+        return &r.r;
+    } else |_| {
+        @panic("err");
+    }
 }
 
 fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {

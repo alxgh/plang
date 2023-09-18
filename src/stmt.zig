@@ -7,6 +7,7 @@ pub const StmtType = enum {
     print,
     variable,
     block,
+    If,
 };
 
 pub const Stmt = struct {
@@ -71,3 +72,16 @@ pub const Block = struct {
 };
 
 pub const BlockConv = Conv(Block);
+
+pub const If = struct {
+    s: Stmt = .{ .t = .If },
+    cond: *expr.Expr,
+    then_branch: *Stmt,
+    else_branch: ?*Stmt,
+
+    pub fn accept(self: *If, v: anytype, comptime T: type) T {
+        return v.visitIfStmt(self);
+    }
+};
+
+pub const IfConv = Conv(If);

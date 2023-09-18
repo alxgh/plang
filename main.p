@@ -8,3 +8,11 @@ print x;
     print x;
 }
 print x;
+x = 14;
+if (x == 12) {
+    print "HI!";
+} else if (x == 13) {
+    print "DOOM!";
+} else {
+    print "OOPS!";
+}

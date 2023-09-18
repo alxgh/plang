@@ -64,7 +64,16 @@ pub fn deinit(self: *Self) ErrorSet!void {
                 }
                 p.statements.deinit();
                 self.allocator.destroy(p);
-            }, // TODO
+            },
+            .If => {
+                var p = stmt.IfConv.from(s);
+                try stmtsq.append(p.then_branch);
+                if (p.else_branch) |eb| {
+                    try stmtsq.append(eb);
+                }
+                try queue.append(p.cond);
+                self.allocator.destroy(p);
+            },
         }
     }
     while (queue.popOrNull()) |e| {
@@ -141,7 +150,27 @@ pub fn statement(self: *Self) ErrorSet!*stmt.Stmt {
     if (self.match(.{.l_brace})) {
         return try self.blockStmt();
     }
+    if (self.match(.{.if_tok})) {
+        return try self.ifStmt();
+    }
     return try self.exprStmt();
+}
+
+pub fn ifStmt(self: *Self) ErrorSet!*stmt.Stmt {
+    _ = try self.consume(.l_paren, "expected ( ater if statement");
+    var e = try self.expression();
+    _ = try self.consume(.r_paren, "expected ) ater if condition");
+    var then_branch = try self.statement();
+    var else_branch: ?*stmt.Stmt = null;
+
+    if (self.match(.{.else_tok})) {
+        else_branch = try self.statement();
+    }
+    if (self.newIfStmt(e, then_branch, else_branch)) |s| {
+        return &s.s;
+    } else |err| {
+        return err;
+    }
 }
 
 pub fn printStmt(self: *Self) ErrorSet!*stmt.Stmt {
@@ -226,6 +255,15 @@ fn newVarStmt(self: *Self, name: tokens.Token, initializer: ?*expr.Expr) ErrorSe
     ps.initializer = initializer;
     ps.name = name;
     return ps;
+}
+
+fn newIfStmt(self: *Self, cond: *expr.Expr, then_branch: *stmt.Stmt, else_branch: ?*stmt.Stmt) ErrorSet!*stmt.If {
+    var is = try self.allocator.create(stmt.If);
+    is.s = .{ .t = .If };
+    is.cond = cond;
+    is.then_branch = then_branch;
+    is.else_branch = else_branch;
+    return is;
 }
 
 fn binaryExpr(self: *Self, l: *expr.Expr, op: tokens.Token, r: *expr.Expr) ErrorSet!*expr.Binary {
