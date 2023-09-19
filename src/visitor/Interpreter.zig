@@ -110,6 +110,7 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitUnaryFn = unary,
         .visitVariableFn = variable,
         .visitAssignFn = assign,
+        .visitLogicalFn = logical,
 
         .visitPrintStmtFn = printStmt,
         .visitExprStmtFn = exprStmt,
@@ -393,4 +394,34 @@ fn assign(ctx: *anyopaque, visitor: *Visitor, e: *expr.Assign) *Result {
     }
     incr(res);
     return res;
+}
+
+fn logical(ctx: *anyopaque, visitor: *Visitor, e: *expr.Logical) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var left = self.eval(visitor, e.left);
+    var right = self.eval(visitor, e.right);
+    defer {
+        decr(right);
+        decr(left);
+    }
+    if (right.t != .boolean or left.t != .boolean) {
+        if (self.nilRes()) |res| {
+            return &res.r;
+        } else |_| {
+            @panic("err");
+        }
+    }
+    var left_boolean = @fieldParentPtr(BooleanResult, "r", left);
+    var right_boolean = @fieldParentPtr(BooleanResult, "r", right);
+    var r = switch (e.op.tt) {
+        .and_tok => left_boolean.val and right_boolean.val,
+        .or_tok => left_boolean.val or right_boolean.val,
+        else => unreachable,
+    };
+    if (self.booleanRes(r)) |res| {
+        return &res.r;
+    } else |_| {
+        @panic("err");
+    }
+    unreachable;
 }

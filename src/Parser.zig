@@ -108,6 +108,12 @@ pub fn deinit(self: *Self) ErrorSet!void {
                 try queue.append(ae.value);
                 self.allocator.destroy(ae);
             },
+            .logical => {
+                var le = expr.LogicalConv.from(e);
+                try queue.append(le.right);
+                try queue.append(le.left);
+                self.allocator.destroy(le);
+            },
         }
     }
 }
@@ -312,12 +318,21 @@ fn assignExpr(self: *Self, name: tokens.Token, value: *expr.Expr) ErrorSet!*expr
     return ae;
 }
 
+fn logicalExpr(self: *Self, left: *expr.Expr, op: tokens.Token, right: *expr.Expr) ErrorSet!*expr.Logical {
+    var le = try self.allocator.create(expr.Logical);
+    le.e = expr.Expr{ .t = .logical };
+    le.left = left;
+    le.op = op;
+    le.right = right;
+    return le;
+}
+
 fn expression(self: *Self) ErrorSet!*expr.Expr {
     return try self.assignment();
 }
 
 fn assignment(self: *Self) ErrorSet!*expr.Expr {
-    var e = try self.equality();
+    var e = try self.logicalOr();
     if (self.match(.{.eq})) {
         var eq = self.prev();
         var val = try self.assignment();
@@ -330,6 +345,30 @@ fn assignment(self: *Self) ErrorSet!*expr.Expr {
         try self.panic(eq, "Invalid assignment target.");
     }
     return e;
+}
+
+fn logicalOr(self: *Self) ErrorSet!*expr.Expr {
+    var left = try self.logicalAnd();
+
+    while (self.match(.{.or_tok})) {
+        var op = self.tokens_iterator.prev();
+        var right = try self.logicalAnd();
+        left = &(try self.logicalExpr(left, op.?, right)).e;
+    }
+
+    return left;
+}
+
+fn logicalAnd(self: *Self) ErrorSet!*expr.Expr {
+    var left = try self.equality();
+
+    while (self.match(.{.and_tok})) {
+        var op = self.tokens_iterator.prev();
+        var right = try self.equality();
+        left = &(try self.logicalExpr(left, op.?, right)).e;
+    }
+
+    return left;
 }
 
 fn equality(self: *Self) ErrorSet!*expr.Expr {

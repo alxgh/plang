@@ -8,8 +8,8 @@ print x;
     print x;
 }
 print x;
-x = 14;
-if (x == 12) {
+x = 15;
+if (x == 12 or x == 15) {
     print "HI!";
 } else if (x == 13) {
     print "DOOM!";
