@@ -16,3 +16,10 @@ if (x == 12 or x == 15) {
 } else {
     print "OOPS!";
 }
+
+var z = 3;
+
+while (z >= 0) {
+    print z;
+    z = z - 1;
+}

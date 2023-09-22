@@ -117,6 +117,7 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitVarStmtFn = varStmt,
         .visitBlockStmtFn = blockStmt,
         .visitIfStmtFn = ifStmt,
+        .visitWhileStmtFn = whileStmt,
     };
 
     for (stmts.items) |s| {
@@ -165,6 +166,33 @@ fn ifStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.If) *Result {
     } else |_| {
         @panic("err");
     }
+}
+
+fn whileStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.While) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var out_res: *Result = undefined;
+    if (nilRes(self)) |r| {
+        out_res = &r.r;
+    } else |_| {
+        @panic("err");
+    }
+
+    while (true) {
+        var cond = self.eval(visitor, s.cond);
+        defer decr(cond);
+
+        if (cond.t != .boolean) {
+            return out_res;
+        }
+
+        var condBool = @fieldParentPtr(BooleanResult, "r", cond);
+        if (!condBool.val) {
+            return out_res;
+        }
+        var lr = visitor.acceptStmt(s.loop_statement);
+        decr(lr);
+    }
+    unreachable;
 }
 
 fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {

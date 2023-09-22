@@ -74,6 +74,12 @@ pub fn deinit(self: *Self) ErrorSet!void {
                 try queue.append(p.cond);
                 self.allocator.destroy(p);
             },
+            .While => {
+                var p = stmt.WhileConv.from(s);
+                try stmtsq.append(p.loop_statement);
+                try queue.append(p.cond);
+                self.allocator.destroy(p);
+            },
         }
     }
     while (queue.popOrNull()) |e| {
@@ -159,7 +165,23 @@ pub fn statement(self: *Self) ErrorSet!*stmt.Stmt {
     if (self.match(.{.if_tok})) {
         return try self.ifStmt();
     }
+    if (self.match(.{.while_tok})) {
+        return try self.whileStmt();
+    }
     return try self.exprStmt();
+}
+
+pub fn whileStmt(self: *Self) ErrorSet!*stmt.Stmt {
+    _ = try self.consume(.l_paren, "expected ( ater if statement");
+    var e = try self.expression();
+    _ = try self.consume(.r_paren, "expected ) ater if condition");
+    var ls = try self.statement();
+
+    if (self.newWhileStmt(e, ls)) |s| {
+        return &s.s;
+    } else |err| {
+        return err;
+    }
 }
 
 pub fn ifStmt(self: *Self) ErrorSet!*stmt.Stmt {
@@ -269,6 +291,14 @@ fn newIfStmt(self: *Self, cond: *expr.Expr, then_branch: *stmt.Stmt, else_branch
     is.cond = cond;
     is.then_branch = then_branch;
     is.else_branch = else_branch;
+    return is;
+}
+
+fn newWhileStmt(self: *Self, cond: *expr.Expr, ls: *stmt.Stmt) ErrorSet!*stmt.While {
+    var is = try self.allocator.create(stmt.While);
+    is.s = .{ .t = .While };
+    is.cond = cond;
+    is.loop_statement = ls;
     return is;
 }
 

@@ -8,6 +8,7 @@ pub const StmtType = enum {
     variable,
     block,
     If,
+    While,
 };
 
 pub const Stmt = struct {
@@ -85,3 +86,15 @@ pub const If = struct {
 };
 
 pub const IfConv = Conv(If);
+
+pub const While = struct {
+    s: Stmt = .{ .t = .While },
+    cond: *expr.Expr,
+    loop_statement: *Stmt,
+
+    pub fn accept(self: *While, v: anytype, comptime T: type) T {
+        return v.visitWhileStmt(self);
+    }
+};
+
+pub const WhileConv = Conv(While);
