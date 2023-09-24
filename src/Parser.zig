@@ -168,7 +168,88 @@ pub fn statement(self: *Self) ErrorSet!*stmt.Stmt {
     if (self.match(.{.while_tok})) {
         return try self.whileStmt();
     }
+    if (self.match(.{.for_tok})) {
+        return try self.forStmt();
+    }
     return try self.exprStmt();
+}
+
+pub fn forStmt(self: *Self) ErrorSet!*stmt.Stmt {
+    _ = try self.consume(.l_paren, "expected ( ater for statement");
+    var variable: tokens.Token = undefined;
+    var range_start: *expr.Literal = undefined;
+    var range_end: *expr.Literal = undefined;
+    var range_step: *expr.Literal = undefined;
+    var range_op: tokens.Token = undefined;
+    _ = range_op;
+    _ = range_step;
+    if (self.consume(.iden, "Expected variable name")) |v| {
+        variable = v.?;
+    } else |err| {
+        return err;
+    }
+    _ = try self.consume(.comma, "Expected comma after identifier");
+    var range_start_num = try self.consume(.num, "Expected number");
+    range_start = try self.litExpr(range_start_num.?);
+    _ = try self.consume(.dot, "expected . after range start");
+    _ = try self.consume(.dot, "expected . after range start");
+    var range_end_num = try self.consume(.num, "Expected number");
+    range_end = try self.litExpr(range_end_num.?);
+    var incr: *expr.Expr = undefined;
+    if (self.match(.{.colon})) {
+        if (self.match(.{ .minus, .plus, .star, .slash })) {
+            var op = self.tokens_iterator.prev().?;
+            var step = try self.consume(.num, "Expected number after arithmatic operator in for loop");
+            incr = &(try self.assignExpr(variable, &(try self.binaryExpr(&(try self.varExpr(variable)).e, op, &(try self.litExpr(step.?)).e)).e)).e;
+        } else {
+            try self.panic(self.tokens_iterator.peek(), "expected arithmatic operator");
+            unreachable;
+        }
+    } else {
+        // this need work on how to free the literal.
+        incr = &(try self.assignExpr(variable, &(try self.binaryExpr(&(try self.varExpr(variable)).e, tokens.Token{
+            .tt = .plus,
+            .lexeme = "+",
+            .line = variable.line,
+            .literal = null,
+        }, &(try self.litExpr(tokens.Token{
+            .tt = .num,
+            .lexeme = "1",
+            .line = variable.line,
+            .literal = null,
+        })).e)).e)).e;
+        unreachable;
+    }
+    _ = try self.consume(.r_paren, "expected ) for condition");
+    var fs = try self.statement();
+
+    // conduct a while loop
+    var bs = try self.newBlockStmt();
+    var initializer = try self.newVarStmt(variable, &range_start.e);
+    try bs.statements.append(&initializer.s);
+    var tt: tokens.Tokens = undefined;
+    var lexeme: []const u8 = undefined;
+    if (tokens.NumberLiteral.from_lit(range_start_num.?.literal.?).val < tokens.NumberLiteral.from_lit(range_end_num.?.literal.?).val) {
+        tt = .less;
+        lexeme = "<";
+    } else {
+        tt = .greater;
+        lexeme = ">";
+    }
+    // incr should be in while loop
+    var body: *stmt.Block = undefined;
+    body = try self.newBlockStmt();
+    try body.statements.append(fs);
+    try body.statements.append(&(try self.newExprStmt(incr)).s);
+
+    var while_loop = try self.newWhileStmt(&(try self.binaryExpr(&(try self.varExpr(variable)).e, tokens.Token{
+        .tt = tt,
+        .lexeme = lexeme,
+        .line = variable.line,
+        .literal = null,
+    }, &range_end.e)).e, &body.s);
+    try bs.statements.append(&while_loop.s);
+    return &bs.s;
 }
 
 pub fn whileStmt(self: *Self) ErrorSet!*stmt.Stmt {

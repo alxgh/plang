@@ -23,3 +23,15 @@ while (z >= 0) {
     print z;
     z = z - 1;
 }
+
+for (p, 0..10:+1) {
+    print p;
+}
+
+for (p, 10..0:-1) {
+    print p;
+}
+
+for (p, 100..1:/2) {
+    print p;
+}

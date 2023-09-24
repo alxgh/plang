@@ -8,6 +8,7 @@ pub const Tokens = enum(u64) {
     minus,
     plus,
     semicolon,
+    colon,
     slash,
     star,
 

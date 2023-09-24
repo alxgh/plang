@@ -92,6 +92,7 @@ pub const scanner = struct {
             '-' => .{ .tt = .minus, .l = null },
             '+' => .{ .tt = .plus, .l = null },
             ';' => .{ .tt = .semicolon, .l = null },
+            ':' => .{ .tt = .colon, .l = null },
             '*' => .{ .tt = .star, .l = null },
             '/' => .{
                 .tt = blk: {
