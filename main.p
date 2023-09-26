@@ -24,14 +24,13 @@ while (z >= 0) {
     z = z - 1;
 }
 
-for (p, 0..10:+1) {
-    print p;
-}
 
 for (p, 10..0:-1) {
-    print p;
+    z = z + 1;
 }
 
 for (p, 100..1:/2) {
-    print p;
+    z = z + 1;
 }
+
+print time();

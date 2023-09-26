@@ -120,6 +120,15 @@ pub fn deinit(self: *Self) ErrorSet!void {
                 try queue.append(le.left);
                 self.allocator.destroy(le);
             },
+            .call => {
+                var ce = expr.CallConv.from(e);
+                try queue.append(ce.callee);
+                for (ce.arguments.items) |item| {
+                    try queue.append(item);
+                }
+                ce.arguments.deinit();
+                self.allocator.destroy(ce);
+            },
         }
     }
 }
@@ -438,6 +447,15 @@ fn logicalExpr(self: *Self, left: *expr.Expr, op: tokens.Token, right: *expr.Exp
     return le;
 }
 
+fn callExpr(self: *Self, callee: *expr.Expr, paren: tokens.Token, arguments: std.ArrayList(*expr.Expr)) ErrorSet!*expr.Call {
+    var ce = try self.allocator.create(expr.Call);
+    ce.e = expr.Expr{ .t = .call };
+    ce.callee = callee;
+    ce.paren = paren;
+    ce.arguments = arguments;
+    return ce;
+}
+
 fn expression(self: *Self) ErrorSet!*expr.Expr {
     return try self.assignment();
 }
@@ -534,7 +552,37 @@ fn unary(self: *Self) ErrorSet!*expr.Expr {
         return &ue.e;
     }
 
-    return try self.primary();
+    return try self.call();
+}
+
+fn call(self: *Self) ErrorSet!*expr.Expr {
+    var e = try self.primary();
+    while (true) {
+        if (self.match(.{.l_paren})) {
+            e = try self.finishCall(e);
+        } else {
+            break;
+        }
+    }
+    return e;
+}
+
+fn finishCall(self: *Self, callee: *expr.Expr) ErrorSet!*expr.Expr {
+    var args = std.ArrayList(*expr.Expr).init(self.allocator);
+    if (!self.check(.r_paren)) {
+        while (true) {
+            if (args.items.len >= 255) {
+                try self.panic(self.tokens_iterator.peek(), "Can't have more than 255 arguments.");
+                unreachable;
+            }
+            try args.append(try self.expression());
+            if (!self.match(.{.comma})) {
+                break;
+            }
+        }
+    }
+    var paren = try self.consume(.r_paren, "Expect ')' after arguments.");
+    return &(try self.callExpr(callee, paren.?, args)).e;
 }
 
 fn primary(self: *Self) ErrorSet!*expr.Expr {

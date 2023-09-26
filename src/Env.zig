@@ -4,6 +4,8 @@ pub const ValueType = enum {
     double,
     boolean,
     string,
+    nil,
+    func,
 };
 
 pub const Value = struct {

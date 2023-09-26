@@ -4,12 +4,34 @@ const stmt = @import("../stmt.zig");
 const tokens = @import("../tokens.zig");
 const Env = @import("../Env.zig");
 const Rc = @import("../util/mem.zig").Rc;
+const time = std.time;
+
+// STD
+const StdTime = struct {
+    pub fn function() Function {
+        return .{
+            .arg_cnt = 0,
+            .call = StdTime.call,
+        };
+    }
+
+    pub fn call(interpreter: *Interpreter, arguments: std.ArrayList(*Result)) *Result {
+        _ = arguments;
+        var val: DoubleValueType = @floatFromInt(time.timestamp());
+        if (DoubleResult.alloc(interpreter.allocator, .{ .t = .double }, val)) |res| {
+            return &res.r;
+        } else |_| {
+            @panic("no idea for now how to handle these :D");
+        }
+    }
+};
 
 const ResultType = enum {
     double,
     boolean,
     string,
     nil,
+    func,
 };
 
 fn decr(r: *Result) void {
@@ -17,6 +39,7 @@ fn decr(r: *Result) void {
         .boolean => @fieldParentPtr(BooleanResult, "r", r).rc.decr(),
         .string => @fieldParentPtr(StringResult, "r", r).rc.decr(),
         .double => @fieldParentPtr(DoubleResult, "r", r).rc.decr(),
+        .func => @fieldParentPtr(FuncResult, "r", r).rc.decr(),
         .nil => @fieldParentPtr(NilResult, "r", r).rc.decr(),
     }
 }
@@ -26,6 +49,7 @@ fn incr(r: *Result) void {
         .boolean => @fieldParentPtr(BooleanResult, "r", r).rc.incr(),
         .string => @fieldParentPtr(StringResult, "r", r).rc.incr(),
         .double => @fieldParentPtr(DoubleResult, "r", r).rc.incr(),
+        .func => @fieldParentPtr(FuncResult, "r", r).rc.incr(),
         .nil => @fieldParentPtr(NilResult, "r", r).rc.incr(),
     }
 }
@@ -58,6 +82,11 @@ fn ResultObject(comptime T: type) type {
     };
 }
 
+const Function = struct {
+    arg_cnt: i8,
+    call: *const fn (interpreter: *Interpreter, arguments: std.ArrayList(*Result)) *Result,
+};
+
 const DoubleValueType = f64;
 const BooleanValueType = bool;
 const StringValueType = []const u8;
@@ -66,8 +95,10 @@ pub const DoubleResult = ResultObject(DoubleValueType);
 pub const BooleanResult = ResultObject(BooleanValueType);
 pub const StringResult = ResultObject(StringValueType);
 pub const NilResult = ResultObject(void);
+pub const FuncResult = ResultObject(Function);
 
 const Self = @This();
+const Interpreter = Self;
 
 fn doubleRes(self: *Self, val: DoubleValueType) !*DoubleResult {
     return DoubleResult.alloc(self.allocator, .{ .t = .double }, val);
@@ -92,12 +123,20 @@ fn resToEnv(t: ResultType) Env.ValueType {
 const Visitor = @import("./visitor.zig").Visitor(*Result);
 
 allocator: std.mem.Allocator,
+global: Env,
 env: Env,
 
-pub fn init(allocator: std.mem.Allocator) Self {
+pub fn init(allocator: std.mem.Allocator) !Self {
+    var env = Env.init(allocator, null);
+    // TODO: Somehow release this object here...
+    var time_fn = StdTime.function();
+    var time_fn_res = try FuncResult.alloc(allocator, .{ .t = .func }, time_fn);
+    time_fn_res.r.env_val.t = resToEnv(time_fn_res.r.t);
+    try env.define("time", &time_fn_res.r.env_val);
     return .{
         .allocator = allocator,
-        .env = Env.init(allocator, null),
+        .global = env,
+        .env = env,
     };
 }
 
@@ -111,6 +150,7 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitVariableFn = variable,
         .visitAssignFn = assign,
         .visitLogicalFn = logical,
+        .visitCallFn = call,
 
         .visitPrintStmtFn = printStmt,
         .visitExprStmtFn = exprStmt,
@@ -208,6 +248,9 @@ fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {
         },
         .string => {
             std.debug.print("{s}\n", .{@fieldParentPtr(StringResult, "r", out).val});
+        },
+        .func => {
+            std.debug.print("<Function>\n", .{});
         },
         .nil => {
             std.debug.print("nil\n", .{});
@@ -330,7 +373,7 @@ fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
                 else => unreachable,
             }
         },
-        .string, .nil => {},
+        .string, .nil, .func => {},
     }
     unreachable;
 }
@@ -452,4 +495,22 @@ fn logical(ctx: *anyopaque, visitor: *Visitor, e: *expr.Logical) *Result {
         @panic("err");
     }
     unreachable;
+}
+
+fn call(ctx: *anyopaque, visitor: *Visitor, e: *expr.Call) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var callee_res = self.eval(visitor, e.callee);
+    if (callee_res.t != .func) {
+        @panic("not a function!");
+    }
+    var callee = @fieldParentPtr(FuncResult, "r", callee_res);
+    var args = std.ArrayList(*Result).init(self.allocator);
+    for (e.arguments.items) |arg| {
+        args.append(self.eval(visitor, arg)) catch @panic("evaling function args");
+    }
+    if (args.items.len != callee.val.arg_cnt) {
+        @panic("Invalid arg cnt.");
+    }
+    defer decr(&callee.r);
+    return callee.val.call(self, args);
 }

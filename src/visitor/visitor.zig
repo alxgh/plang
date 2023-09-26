@@ -15,6 +15,7 @@ pub fn Visitor(comptime resultT: type) type {
         visitVariableFn: *const fn (*anyopaque, *Self, *expr.Variable) resultT,
         visitAssignFn: *const fn (*anyopaque, *Self, *expr.Assign) resultT,
         visitLogicalFn: *const fn (*anyopaque, *Self, *expr.Logical) resultT,
+        visitCallFn: *const fn (*anyopaque, *Self, *expr.Call) resultT,
 
         // statements
         visitExprStmtFn: *const fn (*anyopaque, *Self, *stmt.Expression) resultT,
@@ -52,6 +53,10 @@ pub fn Visitor(comptime resultT: type) type {
             return self.visitLogicalFn(self.ctx, self, e);
         }
 
+        pub fn visitCall(self: *Self, e: *expr.Call) resultT {
+            return self.visitCallFn(self.ctx, self, e);
+        }
+
         pub fn acceptExpr(self: *Self, e: *expr.Expr) resultT {
             return switch (e.t) {
                 .literal => expr.LiteralConv.from(e).accept(self, resultT),
@@ -61,6 +66,7 @@ pub fn Visitor(comptime resultT: type) type {
                 .variable => expr.VariableConv.from(e).accept(self, resultT),
                 .assign => expr.AssignConv.from(e).accept(self, resultT),
                 .logical => expr.LogicalConv.from(e).accept(self, resultT),
+                .call => expr.CallConv.from(e).accept(self, resultT),
             };
         }
 

@@ -19,24 +19,24 @@ fn run(data: []const u8) !void {
     defer sc.deinit();
     var toks = try sc.scan();
 
-    while (true) {
-        if (toks.next()) |tok| {
-            std.debug.print("{}\n ", .{tok});
-            if (tok.literal) |lit| {
-                switch (tok.tt) {
-                    .str, .iden => {
-                        std.debug.print("value: {s}\n", .{scanner.StringLiteral.from_lit(lit).val});
-                    },
-                    .num => {
-                        std.debug.print("value: {d}\n", .{scanner.NumberLiteral.from_lit(lit).val});
-                    },
-                    else => {},
-                }
-            }
-        } else {
-            break;
-        }
-    }
+    // while (true) {
+    //     if (toks.next()) |tok| {
+    //         std.debug.print("{}\n ", .{tok});
+    //         if (tok.literal) |lit| {
+    //             switch (tok.tt) {
+    //                 .str, .iden => {
+    //                     std.debug.print("value: {s}\n", .{scanner.StringLiteral.from_lit(lit).val});
+    //                 },
+    //                 .num => {
+    //                     std.debug.print("value: {d}\n", .{scanner.NumberLiteral.from_lit(lit).val});
+    //                 },
+    //                 else => {},
+    //             }
+    //         }
+    //     } else {
+    //         break;
+    //     }
+    // }
 
     toks.reset();
     var p = Parser.init(allocator, &toks);
@@ -52,7 +52,7 @@ fn run(data: []const u8) !void {
     };
 
     // ASTPrinter.print(exp);
-    var interpreter = Interpreter.init(allocator);
+    var interpreter = try Interpreter.init(allocator);
     defer interpreter.deinit();
     interpreter.interpret(stmts);
 }

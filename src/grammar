@@ -15,6 +15,8 @@ logical_and     -> equality ("and" equality)*;
 equality        -> comparison ( ("!=" | "==") comparison )* ;
 comparison      -> term ( (">" | "<" | ">=" | "<=" ) term )* ;
 term            -> factor ( ("-" | "+") factor )* ;
-factor          -> unary ( ("/", "*") unary ) *
-unary           -> ("!" | "-")? primary;
+factor          -> unary ( ("/", "*") unary ) *;
+unary           -> ("!" | "-")? primary | call;
+call            -> primary ( "(" arguments? ")")*;
+arguments       -> expression ("," expression)*;
 primary         -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER;

@@ -3,7 +3,7 @@ const tokens = @import("./tokens.zig");
 const Token = tokens.Token;
 const Visitor = @import("./visitor/visitor.zig");
 
-pub const ExpType = enum { literal, grouping, unary, binary, variable, assign, logical };
+pub const ExpType = enum { literal, grouping, unary, binary, variable, assign, logical, call };
 
 pub const Expr = struct {
     t: ExpType,
@@ -104,3 +104,17 @@ pub const Logical = struct {
 };
 
 pub const LogicalConv = Conv(Logical);
+
+pub const Call = struct {
+    e: Expr = .{ .t = .call },
+
+    callee: *Expr,
+    paren: Token, // used for error reporting
+    arguments: std.ArrayList(*Expr),
+
+    pub fn accept(self: *Call, v: anytype, comptime T: type) T {
+        return v.visitCall(self);
+    }
+};
+
+pub const CallConv = Conv(Call);
