@@ -1,5 +1,8 @@
 program         -> declaration* EOF;
-declaration     -> varDecl | statement;
+declaration     -> funDecl| varDecl | statement;
+funDecl         -> "fn" function;
+function        -> IDENTIFIER "(" parameters? ")" block;
+parameters      -> IDENTIFIER ("," IDENTIFIER)*;
 varDecl         -> "var" IDENTIFIER ("=" expression)? ";";
 statement       -> exprStmt | forStmt | ifStmt | printStmt | block | whileStmt;
 forStmt         -> "for" "(" IDENTIFIER "," rangeExpr ")" # for (i, 0..10:+1) {}

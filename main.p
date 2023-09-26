@@ -34,3 +34,33 @@ for (p, 100..1:/2) {
 }
 
 print time();
+
+fn mamad() {
+    print "MAMADDDD!!!";
+}
+
+mamad();
+
+var i = 3;
+
+print i;
+
+fn s() {
+    i = i -1;
+    print i;
+}
+
+s();
+s();
+s();
+
+fn rec(i) {
+    if (i > 0) {
+        print "not now";
+        rec(i - 1);
+    } else {
+        print "now";
+    }
+}
+
+rec(3);

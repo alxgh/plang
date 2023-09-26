@@ -80,6 +80,12 @@ pub fn deinit(self: *Self) ErrorSet!void {
                 try queue.append(p.cond);
                 self.allocator.destroy(p);
             },
+            .Function => {
+                var f = stmt.FunctionConv.from(s);
+                try stmtsq.append(stmt.BlockConv.to(f.body));
+                f.parameters.deinit();
+                self.allocator.destroy(f);
+            },
         }
     }
     while (queue.popOrNull()) |e| {
@@ -145,9 +151,35 @@ pub fn parse(self: *Self) ErrorSet!std.ArrayList(*stmt.Stmt) {
 pub fn declaration(self: *Self) ErrorSet!*stmt.Stmt {
     // errdefer self.sync();
     if (self.match(.{.var_tok})) {
-        return self.varDeclaration() catch undefined;
+        return self.varDeclaration();
     }
-    return self.statement() catch undefined;
+    if (self.match(.{.fn_tok})) {
+        return self.fnDeclaration();
+    }
+    return self.statement();
+}
+
+pub fn fnDeclaration(self: *Self) ErrorSet!*stmt.Stmt {
+    var name = try self.consume(.iden, "Expected identifier after 'fn'");
+    _ = try self.consume(.l_paren, "Expected '(' after function name.");
+    var params = std.ArrayList(tokens.Token).init(self.allocator);
+    if (!self.check(.r_paren)) {
+        while (true) {
+            if (params.items.len > 255) {
+                try self.panic(self.tokens_iterator.peek(), "Cannot have more than 255 function parameters.");
+                unreachable;
+            }
+            var param = try self.consume(.iden, "Expected identifier.");
+            try params.append(param.?);
+            if (!self.match(.{.comma})) {
+                break;
+            }
+        }
+    }
+    _ = try self.consume(.r_paren, "Expected ')' after parameters list.");
+    _ = try self.consume(.l_brace, "Expected '{' after func declaration.");
+    var body = try self.blockStmt();
+    return stmt.FunctionConv.to(try self.newFunction(name.?, params, stmt.BlockConv.from(body)));
 }
 
 pub fn varDeclaration(self: *Self) ErrorSet!*stmt.Stmt {
@@ -325,6 +357,7 @@ pub fn exprStmt(self: *Self) ErrorSet!*stmt.Stmt {
 }
 
 fn sync(self: *Self) void {
+    std.debug.print("syncinc...\n", .{});
     self.tokens_iterator.seekBy(1);
 
     while (!self.tokens_iterator.finished()) {
@@ -372,6 +405,15 @@ fn newVarStmt(self: *Self, name: tokens.Token, initializer: ?*expr.Expr) ErrorSe
     ps.s = .{ .t = .variable };
     ps.initializer = initializer;
     ps.name = name;
+    return ps;
+}
+
+fn newFunction(self: *Self, name: tokens.Token, params: std.ArrayList(tokens.Token), body: *stmt.Block) ErrorSet!*stmt.Function {
+    var ps = try self.allocator.create(stmt.Function);
+    ps.s = .{ .t = .Function };
+    ps.name = name;
+    ps.parameters = params;
+    ps.body = body;
     return ps;
 }
 

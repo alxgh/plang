@@ -11,7 +11,7 @@ const StdTime = struct {
     pub fn function() Function {
         return .{
             .arg_cnt = 0,
-            .call = StdTime.call,
+            .call = .{ .Native = StdTime.call },
         };
     }
 
@@ -82,9 +82,17 @@ fn ResultObject(comptime T: type) type {
     };
 }
 
+const FnType = enum {
+    Native,
+    Foreign,
+};
+
 const Function = struct {
     arg_cnt: i8,
-    call: *const fn (interpreter: *Interpreter, arguments: std.ArrayList(*Result)) *Result,
+    call: union(FnType) {
+        Native: *const fn (interpreter: *Interpreter, arguments: std.ArrayList(*Result)) *Result,
+        Foreign: *stmt.Function,
+    },
 };
 
 const DoubleValueType = f64;
@@ -158,6 +166,7 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitBlockStmtFn = blockStmt,
         .visitIfStmtFn = ifStmt,
         .visitWhileStmtFn = whileStmt,
+        .visitFunctionStmtFn = functionStmt,
     };
 
     for (stmts.items) |s| {
@@ -206,6 +215,17 @@ fn ifStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.If) *Result {
     } else |_| {
         @panic("err");
     }
+}
+
+fn functionStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Function) *Result {
+    _ = visitor;
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var fn_res = FuncResult.alloc(self.allocator, .{ .t = .func }, Function{ .arg_cnt = @intCast(s.parameters.items.len), .call = .{
+        .Foreign = s,
+    } }) catch @panic("akjsdlkajlkdjadjlksajdlk");
+    fn_res.r.env_val.t = resToEnv(fn_res.r.t);
+    self.env.define(s.name.lexeme, &fn_res.r.env_val) catch @panic("aksdjlkasjdlk");
+    return &(self.nilRes() catch @panic("ajdklajkld")).r;
 }
 
 fn whileStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.While) *Result {
@@ -505,12 +525,43 @@ fn call(ctx: *anyopaque, visitor: *Visitor, e: *expr.Call) *Result {
     }
     var callee = @fieldParentPtr(FuncResult, "r", callee_res);
     var args = std.ArrayList(*Result).init(self.allocator);
+    defer args.deinit();
     for (e.arguments.items) |arg| {
-        args.append(self.eval(visitor, arg)) catch @panic("evaling function args");
+        var evaled_arg = self.eval(visitor, arg);
+        args.append(evaled_arg) catch @panic("evaling function args");
+    }
+    defer {
+        for (args.items) |a| {
+            decr(a);
+        }
     }
     if (args.items.len != callee.val.arg_cnt) {
         @panic("Invalid arg cnt.");
     }
     defer decr(&callee.r);
-    return callee.val.call(self, args);
+    return switch (callee.val.call) {
+        .Native => |call_fn| call_fn(self, args),
+        .Foreign => |foreign_call_fn| blk: {
+            var prev_env = self.env;
+            defer {
+                self.env = prev_env;
+            }
+            var env = Env.init(self.allocator, &prev_env);
+            for (foreign_call_fn.parameters.items, 0..) |p, i| {
+                args.items[i].env_val.t = resToEnv(args.items[i].t);
+                env.define(
+                    p.lexeme,
+                    &args.items[i].env_val,
+                ) catch @panic("ajsdlo999387");
+            }
+
+            self.env = env;
+            defer self.env.deinit(envdeinit);
+            for (foreign_call_fn.body.statements.items) |statement| {
+                var r = visitor.acceptStmt(statement);
+                decr(r);
+            }
+            break :blk &(self.nilRes() catch @panic("god")).r;
+        },
+    };
 }

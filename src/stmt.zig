@@ -9,6 +9,7 @@ pub const StmtType = enum {
     block,
     If,
     While,
+    Function,
 };
 
 pub const Stmt = struct {
@@ -17,11 +18,11 @@ pub const Stmt = struct {
 
 fn Conv(comptime T: type) type {
     return struct {
-        pub fn from(e: *Stmt) *T {
-            return @fieldParentPtr(T, "s", e);
+        pub fn from(s: *Stmt) *T {
+            return @fieldParentPtr(T, "s", s);
         }
-        pub fn to(be: T) *Stmt {
-            return be.s;
+        pub fn to(be: *T) *Stmt {
+            return &be.s;
         }
     };
 }
@@ -98,3 +99,16 @@ pub const While = struct {
 };
 
 pub const WhileConv = Conv(While);
+
+pub const Function = struct {
+    s: Stmt = .{ .t = .Function },
+    name: tokens.Token,
+    parameters: std.ArrayList(tokens.Token),
+    body: *Block,
+
+    pub fn accept(self: *Function, v: anytype, comptime T: type) T {
+        return v.visitFunctionStmt(self);
+    }
+};
+
+pub const FunctionConv = Conv(Function);
