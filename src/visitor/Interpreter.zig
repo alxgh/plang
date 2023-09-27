@@ -276,19 +276,16 @@ fn whileStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.While) *Result {
     unreachable;
 }
 
-fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {
-    const self: *Self = @ptrCast(@alignCast(ctx));
-    var out = self.eval(visitor, s.e);
-    // printing somethign here...
-    switch (out.t) {
+fn print(r: *Result) void {
+    switch (r.t) {
         .double => {
-            std.debug.print("{d}\n", .{@fieldParentPtr(DoubleResult, "r", out).val});
+            std.debug.print("{d}\n", .{@fieldParentPtr(DoubleResult, "r", r).val});
         },
         .boolean => {
-            std.debug.print("{}\n", .{@fieldParentPtr(BooleanResult, "r", out).val});
+            std.debug.print("{}\n", .{@fieldParentPtr(BooleanResult, "r", r).val});
         },
         .string => {
-            std.debug.print("{s}\n", .{@fieldParentPtr(StringResult, "r", out).val});
+            std.debug.print("{s}\n", .{@fieldParentPtr(StringResult, "r", r).val});
         },
         .func => {
             std.debug.print("<Function>\n", .{});
@@ -297,6 +294,13 @@ fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {
             std.debug.print("nil\n", .{});
         },
     }
+}
+
+fn printStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Print) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var out = self.eval(visitor, s.e);
+    // printing somethign here...
+    print(out);
     return out;
 }
 
@@ -580,15 +584,18 @@ fn call(ctx: *anyopaque, visitor: *Visitor, e: *expr.Call) *Result {
             }
 
             self.env = env;
-            defer self.env.deinit(envdeinit);
+            defer env.deinit(envdeinit);
             for (foreign_call_fn.body.statements.items) |statement| {
                 var r = visitor.acceptStmt(statement);
+
                 if (self.ret) {
                     // We used the retur val.
                     self.ret = false;
+                    incr(r);
                     break :blk r;
+                } else {
+                    decr(r);
                 }
-                decr(r);
             }
             break :blk &(self.nilRes() catch @panic("god")).r;
         },
