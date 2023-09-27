@@ -64,3 +64,9 @@ fn rec(i) {
 }
 
 rec(3);
+
+fn calc(i) {
+    ret i - 1;
+}
+
+print calc(3);

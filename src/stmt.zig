@@ -10,6 +10,7 @@ pub const StmtType = enum {
     If,
     While,
     Function,
+    Return,
 };
 
 pub const Stmt = struct {
@@ -112,3 +113,15 @@ pub const Function = struct {
 };
 
 pub const FunctionConv = Conv(Function);
+
+pub const Return = struct {
+    s: Stmt = .{ .t = .Function },
+    keyword: tokens.Token,
+    value: ?*expr.Expr,
+
+    pub fn accept(self: *Return, v: anytype, comptime T: type) T {
+        return v.visitReturnStmt(self);
+    }
+};
+
+pub const ReturnConv = Conv(Return);

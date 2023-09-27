@@ -86,6 +86,13 @@ pub fn deinit(self: *Self) ErrorSet!void {
                 f.parameters.deinit();
                 self.allocator.destroy(f);
             },
+            .Return => {
+                var f = stmt.ReturnConv.from(s);
+                if (f.value) |v| {
+                    try queue.append(v);
+                }
+                self.allocator.destroy(f);
+            },
         }
     }
     while (queue.popOrNull()) |e| {
@@ -200,6 +207,9 @@ pub fn statement(self: *Self) ErrorSet!*stmt.Stmt {
     if (self.match(.{.print_tok})) {
         return try self.printStmt();
     }
+    if (self.match(.{.ret_tok})) {
+        return try self.retStmt();
+    }
     if (self.match(.{.l_brace})) {
         return try self.blockStmt();
     }
@@ -213,6 +223,16 @@ pub fn statement(self: *Self) ErrorSet!*stmt.Stmt {
         return try self.forStmt();
     }
     return try self.exprStmt();
+}
+
+pub fn retStmt(self: *Self) ErrorSet!*stmt.Stmt {
+    var keyword = self.tokens_iterator.prev();
+    var value: ?*expr.Expr = null;
+    if (!self.check(.semicolon)) {
+        value = try self.expression();
+    }
+    _ = try self.consume(.semicolon, "Expected ';' after return statement.");
+    return &(try self.newRetStmt(keyword.?, value)).s;
 }
 
 pub fn forStmt(self: *Self) ErrorSet!*stmt.Stmt {
@@ -432,6 +452,14 @@ fn newWhileStmt(self: *Self, cond: *expr.Expr, ls: *stmt.Stmt) ErrorSet!*stmt.Wh
     is.cond = cond;
     is.loop_statement = ls;
     return is;
+}
+
+fn newRetStmt(self: *Self, keyword: tokens.Token, value: ?*expr.Expr) ErrorSet!*stmt.Return {
+    var rs = try self.allocator.create(stmt.Return);
+    rs.s = .{ .t = .Return };
+    rs.keyword = keyword;
+    rs.value = value;
+    return rs;
 }
 
 fn binaryExpr(self: *Self, l: *expr.Expr, op: tokens.Token, r: *expr.Expr) ErrorSet!*expr.Binary {

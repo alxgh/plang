@@ -4,7 +4,8 @@ funDecl         -> "fn" function;
 function        -> IDENTIFIER "(" parameters? ")" block;
 parameters      -> IDENTIFIER ("," IDENTIFIER)*;
 varDecl         -> "var" IDENTIFIER ("=" expression)? ";";
-statement       -> exprStmt | forStmt | ifStmt | printStmt | block | whileStmt;
+statement       -> exprStmt | forStmt | ifStmt | printStmt | block | returnStmt | whileStmt;
+returnStmt      -> "return" expression? ";";
 forStmt         -> "for" "(" IDENTIFIER "," rangeExpr ")" # for (i, 0..10:+1) {}
 whileStmt       -> "while" "(" expression ")" statement;
 ifStmt          -> "if" "(" expression ")" statement ("else" statement)?;

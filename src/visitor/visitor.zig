@@ -25,6 +25,7 @@ pub fn Visitor(comptime resultT: type) type {
         visitIfStmtFn: *const fn (*anyopaque, *Self, *stmt.If) resultT,
         visitWhileStmtFn: *const fn (*anyopaque, *Self, *stmt.While) resultT,
         visitFunctionStmtFn: *const fn (*anyopaque, *Self, *stmt.Function) resultT,
+        visitReturnStmtFn: *const fn (*anyopaque, *Self, *stmt.Return) resultT,
 
         pub fn visitBinary(self: *Self, e: *expr.Binary) resultT {
             return self.visitBinaryFn(self.ctx, self, e);
@@ -98,6 +99,9 @@ pub fn Visitor(comptime resultT: type) type {
         pub fn visitFunctionStmt(self: *Self, s: *stmt.Function) resultT {
             return self.visitFunctionStmtFn(self.ctx, self, s);
         }
+        pub fn visitReturnStmt(self: *Self, s: *stmt.Return) resultT {
+            return self.visitReturnStmtFn(self.ctx, self, s);
+        }
 
         pub fn acceptStmt(self: *Self, s: *stmt.Stmt) resultT {
             return switch (s.t) {
@@ -108,6 +112,7 @@ pub fn Visitor(comptime resultT: type) type {
                 .If => stmt.IfConv.from(s).accept(self, resultT),
                 .While => stmt.WhileConv.from(s).accept(self, resultT),
                 .Function => stmt.FunctionConv.from(s).accept(self, resultT),
+                .Return => stmt.ReturnConv.from(s).accept(self, resultT),
             };
         }
     };

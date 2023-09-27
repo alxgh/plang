@@ -133,6 +133,7 @@ const Visitor = @import("./visitor.zig").Visitor(*Result);
 allocator: std.mem.Allocator,
 global: Env,
 env: Env,
+ret: bool = false,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     var env = Env.init(allocator, null);
@@ -145,6 +146,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         .allocator = allocator,
         .global = env,
         .env = env,
+        .ret = false,
     };
 }
 
@@ -167,11 +169,15 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
         .visitIfStmtFn = ifStmt,
         .visitWhileStmtFn = whileStmt,
         .visitFunctionStmtFn = functionStmt,
+        .visitReturnStmtFn = retStmt,
     };
 
     for (stmts.items) |s| {
         var r = visitor.acceptStmt(s);
         decr(r);
+        if (self.ret) {
+            @panic("return in invalid place!");
+        }
     }
 }
 
@@ -228,6 +234,18 @@ fn functionStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Function) *Result {
     return &(self.nilRes() catch @panic("ajdklajkld")).r;
 }
 
+fn retStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Return) *Result {
+    const self: *Self = @ptrCast(@alignCast(ctx));
+    var res: *Result = undefined;
+    if (s.value) |v| {
+        res = visitor.acceptExpr(v);
+    } else {
+        res = &(self.nilRes() catch @panic("OOM")).r;
+    }
+    self.ret = true;
+    return res;
+}
+
 fn whileStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.While) *Result {
     const self: *Self = @ptrCast(@alignCast(ctx));
     var out_res: *Result = undefined;
@@ -250,6 +268,9 @@ fn whileStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.While) *Result {
             return out_res;
         }
         var lr = visitor.acceptStmt(s.loop_statement);
+        if (self.ret) {
+            return lr;
+        }
         decr(lr);
     }
     unreachable;
@@ -303,6 +324,9 @@ fn blockStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Block) *Result {
     defer self.env.deinit(envdeinit);
     for (s.statements.items) |statement| {
         var r = visitor.acceptStmt(statement);
+        if (self.ret) {
+            return r;
+        }
         decr(r);
     }
     var r = nilRes(self) catch @panic("shit");
@@ -559,6 +583,11 @@ fn call(ctx: *anyopaque, visitor: *Visitor, e: *expr.Call) *Result {
             defer self.env.deinit(envdeinit);
             for (foreign_call_fn.body.statements.items) |statement| {
                 var r = visitor.acceptStmt(statement);
+                if (self.ret) {
+                    // We used the retur val.
+                    self.ret = false;
+                    break :blk r;
+                }
                 decr(r);
             }
             break :blk &(self.nilRes() catch @panic("god")).r;
