@@ -421,7 +421,7 @@ fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
                 else => unreachable,
             }
         },
-        .string, .nil, .func => {},
+        .string, .nil, .func => unreachable,
     }
     unreachable;
 }
@@ -587,17 +587,26 @@ fn call(ctx: *anyopaque, visitor: *Visitor, e: *expr.Call) *Result {
             defer env.deinit(envdeinit);
             for (foreign_call_fn.body.statements.items) |statement| {
                 var r = visitor.acceptStmt(statement);
+                defer decr(r);
 
                 if (self.ret) {
                     // We used the retur val.
                     self.ret = false;
-                    incr(r);
-                    break :blk r;
-                } else {
-                    decr(r);
+                    // copy the result and pass it back
+                    break :blk self.cpy(r);
                 }
             }
             break :blk &(self.nilRes() catch @panic("god")).r;
         },
+    };
+}
+
+fn cpy(self: *Self, r: *Result) *Result {
+    return switch (r.t) {
+        .boolean => &(self.booleanRes(@fieldParentPtr(BooleanResult, "r", r).val) catch @panic("OOM")).r,
+        .string => &(self.strRes(@fieldParentPtr(StringResult, "r", r).val) catch @panic("OOM")).r,
+        .double => &(self.doubleRes(@fieldParentPtr(DoubleResult, "r", r).val) catch @panic("OOM")).r,
+        .func => &(FuncResult.alloc(self.allocator, .{ .t = .func }, @fieldParentPtr(FuncResult, "r", r).val) catch @panic("OOM")).r,
+        .nil => &(self.nilRes() catch @panic("OOM")).r,
     };
 }

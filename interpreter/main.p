@@ -66,7 +66,9 @@ fn rec(i) {
 rec(3);
 
 fn calc(i) {
-    ret i - 1;
+    if (i < 5) {
+        ret calc(i + 1);
+    }
+    ret i;
 }
-
-print calc(3);
+print calc(4);
