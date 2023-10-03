@@ -223,6 +223,9 @@ fn define(self: *Self, name: tokens.Token) void {
 }
 
 fn resolveLocal(self: *Self, e: *expr.Expr, name: tokens.Token) void {
+    if (self.scopes.items.len == 0) {
+        return;
+    }
     var i: i64 = @intCast(self.scopes.items.len - 1);
     while (i >= 0) : (i -= 1) {
         var scope = self.scopes.items[@intCast(i)];
