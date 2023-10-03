@@ -4,12 +4,12 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug",
-            "program": "${workspaceFolder}/zig-out/bin/plang",
+            "name": "Interpreter Debug",
+            "program": "${workspaceFolder}/interpreter/zig-out/bin/plang",
             "args": [
-                "/home/alex/plang/fib.p"
+                "${workspaceFolder}/interpreter/closure.p"
             ],
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/interpreter",
         }
     ]
 }

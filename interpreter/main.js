@@ -1,6 +1,9 @@
-function fib(n) {
-    if (n < 2) return n;
-    return fib(n - 1) + fib(n - 2);
-}
+let a = "global";
+{
+    function showA() {
+        console.log(a);
+    }
 
-console.log(fib(20));
+    let a = "block";
+    showA.bind(this)();
+}

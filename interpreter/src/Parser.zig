@@ -464,7 +464,7 @@ fn newRetStmt(self: *Self, keyword: tokens.Token, value: ?*expr.Expr) ErrorSet!*
 
 fn binaryExpr(self: *Self, l: *expr.Expr, op: tokens.Token, r: *expr.Expr) ErrorSet!*expr.Binary {
     var be = try self.allocator.create(expr.Binary);
-    be.e = expr.Expr{ .t = .binary };
+    be.e = expr.newExpr(.binary);
     be.left = l;
     be.op = op;
     be.right = r;
@@ -473,7 +473,7 @@ fn binaryExpr(self: *Self, l: *expr.Expr, op: tokens.Token, r: *expr.Expr) Error
 
 fn unaryExpr(self: *Self, op: tokens.Token, r: *expr.Expr) ErrorSet!*expr.Unary {
     var be = try self.allocator.create(expr.Unary);
-    be.e = expr.Expr{ .t = .unary };
+    be.e = expr.newExpr(.unary);
     be.op = op;
     be.right = r;
     return be;
@@ -481,28 +481,28 @@ fn unaryExpr(self: *Self, op: tokens.Token, r: *expr.Expr) ErrorSet!*expr.Unary 
 
 fn groupingExpr(self: *Self, e: *expr.Expr) ErrorSet!*expr.Grouping {
     var ge = try self.allocator.create(expr.Grouping);
-    ge.e = expr.Expr{ .t = .grouping };
+    ge.e = expr.newExpr(.grouping);
     ge.mid = e;
     return ge;
 }
 
 fn litExpr(self: *Self, t: tokens.Token) ErrorSet!*expr.Literal {
     var ge = try self.allocator.create(expr.Literal);
-    ge.e = expr.Expr{ .t = .literal };
+    ge.e = expr.newExpr(.literal);
     ge.v = t;
     return ge;
 }
 
 fn varExpr(self: *Self, name: tokens.Token) ErrorSet!*expr.Variable {
     var ve = try self.allocator.create(expr.Variable);
-    ve.e = expr.Expr{ .t = .variable };
+    ve.e = expr.newExpr(.variable);
     ve.name = name;
     return ve;
 }
 
 fn assignExpr(self: *Self, name: tokens.Token, value: *expr.Expr) ErrorSet!*expr.Assign {
     var ae = try self.allocator.create(expr.Assign);
-    ae.e = expr.Expr{ .t = .assign };
+    ae.e = expr.newExpr(.assign);
     ae.name = name;
     ae.value = value;
     return ae;
@@ -510,7 +510,7 @@ fn assignExpr(self: *Self, name: tokens.Token, value: *expr.Expr) ErrorSet!*expr
 
 fn logicalExpr(self: *Self, left: *expr.Expr, op: tokens.Token, right: *expr.Expr) ErrorSet!*expr.Logical {
     var le = try self.allocator.create(expr.Logical);
-    le.e = expr.Expr{ .t = .logical };
+    le.e = expr.newExpr(.logical);
     le.left = left;
     le.op = op;
     le.right = right;
@@ -519,7 +519,7 @@ fn logicalExpr(self: *Self, left: *expr.Expr, op: tokens.Token, right: *expr.Exp
 
 fn callExpr(self: *Self, callee: *expr.Expr, paren: tokens.Token, arguments: std.ArrayList(*expr.Expr)) ErrorSet!*expr.Call {
     var ce = try self.allocator.create(expr.Call);
-    ce.e = expr.Expr{ .t = .call };
+    ce.e = expr.newExpr(.call);
     ce.callee = callee;
     ce.paren = paren;
     ce.arguments = arguments;

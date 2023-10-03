@@ -7,7 +7,19 @@ pub const ExpType = enum { literal, grouping, unary, binary, variable, assign, l
 
 pub const Expr = struct {
     t: ExpType,
+    id: u64,
 };
+
+var exprId: u64 = @as(u64, 0);
+
+pub fn newExpr(t: ExpType) Expr {
+    var eid = exprId;
+    exprId += 1;
+    return .{
+        .t = t,
+        .id = eid,
+    };
+}
 
 fn Conv(comptime T: type) type {
     return struct {
@@ -21,7 +33,7 @@ fn Conv(comptime T: type) type {
 }
 
 pub const Binary = struct {
-    e: Expr = .{ .t = .binary },
+    e: Expr,
 
     left: *Expr,
     op: Token,
@@ -34,7 +46,7 @@ pub const Binary = struct {
 pub const BinaryConv = Conv(Binary);
 
 pub const Literal = struct {
-    e: Expr = .{ .t = .literal },
+    e: Expr,
 
     v: ?tokens.Token,
 
@@ -45,7 +57,7 @@ pub const Literal = struct {
 pub const LiteralConv = Conv(Literal);
 
 pub const Grouping = struct {
-    e: Expr = .{ .t = .grouping },
+    e: Expr,
 
     mid: *Expr,
     pub fn accept(self: *Grouping, v: anytype, comptime T: type) T {
@@ -55,7 +67,7 @@ pub const Grouping = struct {
 pub const GroupingConv = Conv(Grouping);
 
 pub const Unary = struct {
-    e: Expr = .{ .t = .unary },
+    e: Expr,
 
     op: Token,
     right: *Expr,
@@ -67,7 +79,7 @@ pub const Unary = struct {
 pub const UnaryConv = Conv(Unary);
 
 pub const Variable = struct {
-    e: Expr = .{ .t = .variable },
+    e: Expr,
 
     name: ?tokens.Token,
 
@@ -79,7 +91,7 @@ pub const Variable = struct {
 pub const VariableConv = Conv(Variable);
 
 pub const Assign = struct {
-    e: Expr = .{ .t = .assign },
+    e: Expr,
 
     name: ?tokens.Token,
     value: *Expr,
@@ -92,7 +104,7 @@ pub const Assign = struct {
 pub const AssignConv = Conv(Assign);
 
 pub const Logical = struct {
-    e: Expr = .{ .t = .logical },
+    e: Expr,
 
     op: tokens.Token,
     left: *Expr,
@@ -106,7 +118,7 @@ pub const Logical = struct {
 pub const LogicalConv = Conv(Logical);
 
 pub const Call = struct {
-    e: Expr = .{ .t = .call },
+    e: Expr,
 
     callee: *Expr,
     paren: Token, // used for error reporting

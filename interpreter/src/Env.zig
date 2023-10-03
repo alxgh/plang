@@ -53,6 +53,19 @@ pub fn assign(self: *Self, name: []const u8, val: ?*Value) !?*Value {
     return error.NotDefined;
 }
 
+pub fn assignAtDistance(self: *Self, distance: u64, name: []const u8, val: ?*Value) !?*Value {
+    var e = self.ancestor(distance);
+    if (e.values.contains(name)) {
+        var prev = self.values.get(name);
+        try self.values.put(name, val);
+        return prev.?;
+    }
+    if (e.enclosing) |enc| {
+        return enc.assign(name, val);
+    }
+    return error.NotDefined;
+}
+
 pub fn get(self: *Self, name: []const u8) ?*Value {
     // runtime error: variable not found???
     if (self.values.get(name)) |v| {
@@ -64,4 +77,17 @@ pub fn get(self: *Self, name: []const u8) ?*Value {
     }
 
     return null;
+}
+
+pub fn getAtDist(self: *Self, distance: u64, name: []const u8) ?*Value {
+    return self.ancestor(distance).values.get(name).?;
+}
+
+pub fn ancestor(self: *Self, distance: u64) *Self {
+    var e = self;
+    for (0..distance) |i| {
+        _ = i;
+        e = e.enclosing.?;
+    }
+    return e;
 }

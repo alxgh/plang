@@ -4,6 +4,7 @@ const scanner = @import("./scanner.zig");
 const Parser = @import("./Parser.zig");
 const ASTPrinter = @import("./visitor/printer.zig");
 const Interpreter = @import("./visitor/Interpreter.zig");
+const Resolver = @import("./visitor/Resolver.zig");
 
 fn run(data: []const u8) !void {
     std.debug.print("runningg....\n", .{});
@@ -54,6 +55,9 @@ fn run(data: []const u8) !void {
     // ASTPrinter.print(exp);
     var interpreter = try Interpreter.init(allocator);
     defer interpreter.deinit();
+    var resolver = Resolver.init(allocator, &interpreter);
+    defer resolver.deinit();
+    resolver.start(stmts);
     interpreter.interpret(stmts);
 }
 

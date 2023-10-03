@@ -129,25 +129,36 @@ fn resToEnv(t: ResultType) Env.ValueType {
 }
 
 const Visitor = @import("./visitor.zig").Visitor(*Result);
+const Locals = std.AutoHashMap(u64, u64);
 
 allocator: std.mem.Allocator,
-global: Env,
-env: Env,
+global: *Env,
+env: *Env,
 ret: bool = false,
+locals: Locals,
+
+pub fn newEnv(allocator: std.mem.Allocator, enclosing: ?*Env) !*Env {
+    var e = try allocator.create(Env);
+    e.* = Env.init(allocator, enclosing);
+    return e;
+}
 
 pub fn init(allocator: std.mem.Allocator) !Self {
-    var env = Env.init(allocator, null);
+    var env = try newEnv(allocator, null);
     // TODO: Somehow release this object here...
     var time_fn = StdTime.function();
     var time_fn_res = try FuncResult.alloc(allocator, .{ .t = .func }, time_fn);
     time_fn_res.r.env_val.t = resToEnv(time_fn_res.r.t);
-    try env.define("time", &time_fn_res.r.env_val);
-    return .{
+    var s = Self{
         .allocator = allocator,
         .global = env,
         .env = env,
         .ret = false,
+        .locals = Locals.init(allocator),
     };
+
+    try s.env.define("time", &time_fn_res.r.env_val);
+    return s;
 }
 
 pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
@@ -182,11 +193,17 @@ pub fn interpret(self: *Self, stmts: std.ArrayList(*stmt.Stmt)) void {
 }
 
 pub fn deinit(self: *Self) void {
-    defer self.env.deinit(envdeinit);
+    self.env.deinit(envdeinit);
+    self.allocator.destroy(self.env);
+    self.locals.deinit();
 }
 
 fn envdeinit(v: *Env.Value) void {
     decr(@fieldParentPtr(Result, "env_val", v));
+}
+
+pub fn resolve(self: *Self, e: *expr.Expr, depth: u64) void {
+    self.locals.put(e.id, depth) catch @panic("OOM");
 }
 
 fn eval(self: *Self, visitor: *Visitor, e: *expr.Expr) *Result {
@@ -314,7 +331,7 @@ fn varStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Var) *Result {
         incr(res);
         value = &res.env_val;
     }
-    self.env.define(s.name.lexeme, value) catch undefined;
+    self.env.define(s.name.lexeme, value) catch @panic("OOM");
     return res;
 }
 
@@ -324,7 +341,8 @@ fn blockStmt(ctx: *anyopaque, visitor: *Visitor, s: *stmt.Block) *Result {
     defer {
         self.env = prev_env;
     }
-    self.env = Env.init(self.allocator, &prev_env);
+    self.env = newEnv(self.allocator, prev_env) catch @panic("OOM");
+    defer self.allocator.destroy(self.env);
     defer self.env.deinit(envdeinit);
     for (s.statements.items) |statement| {
         var r = visitor.acceptStmt(statement);
@@ -341,18 +359,18 @@ fn variable(ctx: *anyopaque, visitor: *Visitor, e: *expr.Variable) *Result {
     _ = visitor;
 
     const self: *Self = @ptrCast(@alignCast(ctx));
-    var value = self.env.get(e.name.?.lexeme);
+    var value: ?*Env.Value = null;
+    if (self.locals.get(e.e.id)) |distance| {
+        value = self.env.getAtDist(distance, e.name.?.lexeme);
+    } else {
+        value = self.global.get(e.name.?.lexeme);
+    }
     if (value) |val| {
         var r = @fieldParentPtr(Result, "env_val", val);
         incr(r);
         return r;
-        // return switch (val.t) {
-        //     .boolean => @fieldParentPtr(BooleanResult, "r", r),
-        //     .string => @fieldParentPtr(StringResult, "r", r),
-        //     .double => @fieldParentPtr(DoubleResult, "r", r),
-        // };
     }
-    return undefined;
+    @panic("var not found!");
 }
 
 fn binary(ctx: *anyopaque, visitor: *Visitor, e: *expr.Binary) *Result {
@@ -506,7 +524,13 @@ fn assign(ctx: *anyopaque, visitor: *Visitor, e: *expr.Assign) *Result {
     var res = self.eval(visitor, e.value);
     res.env_val.t = resToEnv(res.t);
     var value = &res.env_val;
-    var prev = self.env.assign(e.name.?.lexeme, value) catch @panic("unhandled");
+    var prev: ?*Env.Value = null;
+    if (self.locals.get(e.e.id)) |distance| {
+        prev = self.env.assignAtDistance(distance, e.name.?.lexeme, value) catch @panic("unhandled 1");
+    } else {
+        prev = self.global.assign(e.name.?.lexeme, value) catch @panic("unhandled");
+    }
+
     if (prev) |val| {
         var r = @fieldParentPtr(Result, "env_val", val);
         decr(r);
@@ -574,7 +598,7 @@ fn call(ctx: *anyopaque, visitor: *Visitor, e: *expr.Call) *Result {
             defer {
                 self.env = prev_env;
             }
-            var env = Env.init(self.allocator, &prev_env);
+            var env = newEnv(self.allocator, prev_env) catch @panic("OOM");
             for (foreign_call_fn.parameters.items, 0..) |p, i| {
                 args.items[i].env_val.t = resToEnv(args.items[i].t);
                 env.define(
@@ -584,6 +608,7 @@ fn call(ctx: *anyopaque, visitor: *Visitor, e: *expr.Call) *Result {
             }
 
             self.env = env;
+            defer self.allocator.destroy(env);
             defer env.deinit(envdeinit);
             for (foreign_call_fn.body.statements.items) |statement| {
                 var r = visitor.acceptStmt(statement);
