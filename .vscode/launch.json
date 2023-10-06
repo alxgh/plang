@@ -10,6 +10,16 @@
                 "${workspaceFolder}/interpreter/closure.p"
             ],
             "cwd": "${workspaceFolder}/interpreter",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "VM Debug",
+            "program": "${workspaceFolder}/vm/zig-out/bin/vm",
+            "args": [
+                ""
+            ],
+            "cwd": "${workspaceFolder}/vm",
         }
     ]
 }
