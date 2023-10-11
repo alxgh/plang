@@ -17,7 +17,7 @@
             "name": "VM Debug",
             "program": "${workspaceFolder}/vm/zig-out/bin/vm",
             "args": [
-                ""
+                "${workspaceFolder}/vm/main.p"
             ],
             "cwd": "${workspaceFolder}/vm",
         }

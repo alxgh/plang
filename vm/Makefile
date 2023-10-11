@@ -7,4 +7,4 @@ run: build
 FILE ?= main.p
 
 exec: build
-	./zig-out/bin/plang $(FILE)
+	./zig-out/bin/vm $(FILE)

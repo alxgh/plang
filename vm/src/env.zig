@@ -1,1 +1,2 @@
-pub const Debug = true;
+pub const DebugExecutionTrace = true;
+pub const DebugPrintCode = true;
