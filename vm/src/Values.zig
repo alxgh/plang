@@ -1,7 +1,20 @@
 const std = @import("std");
-pub const Value = f64;
-const ArrayList = std.ArrayList(Value);
 const Allocator = std.mem.Allocator;
+
+pub const Value = union(enum) {
+    Bool: bool,
+    Number: f64,
+};
+
+pub fn numberValue(val: f64) Value {
+    return .{ .Number = val };
+}
+
+pub fn boolValue(val: bool) Value {
+    return .{ .Bool = val };
+}
+
+const ArrayList = std.ArrayList(Value);
 
 const Self = @This();
 

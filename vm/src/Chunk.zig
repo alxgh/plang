@@ -9,6 +9,17 @@ pub const OpCode = enum(u8) {
     Subtract,
     Multiply,
     Divide,
+    Nil,
+    True,
+    False,
+    Not,
+    Equal,
+    Greater,
+    Less,
+
+    pub fn byte(oc: OpCode) u8 {
+        return @intFromEnum(oc);
+    }
 };
 
 const Self = @This();
@@ -89,9 +100,14 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
             // constantInstr
             const constant = self.code.items[offset + 1];
             try stdout.writer().print("OP_CONSTANT: {d:0>4} ", .{offset});
-            try stdout.writer().print("{d}", .{self.constants.values.items[@as(usize, constant)]});
+            try stdout.writer().print("{}", .{self.constants.values.items[@as(usize, constant)]});
             try stdout.writer().print("\n", .{});
             return offset + 2;
         },
+        else => |v| {
+            try stdout.writer().print("{}: {d:0>4}\n", .{ v, offset });
+
+            return offset + 1;
+        }, // TODO
     }
 }

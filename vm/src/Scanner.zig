@@ -88,13 +88,13 @@ const identifierMap = std.ComptimeStringMap(TokenType, .{
 
 const LiteralType = enum {
     String,
-    Double,
+    Number,
     Char,
 };
 
 const TokenLiteral = union(LiteralType) {
     String: []const u8,
-    Double: f64,
+    Number: f64,
     Char: u8,
 };
 
@@ -197,11 +197,11 @@ fn num(self: *Self) !?Token {
             _ = self.advance();
         }
     }
-    return self.make(.Num, TokenLiteral{ .Double = try std.fmt.parseFloat(f64, self.source[self.start..self.idx]) });
+    return self.make(.Num, TokenLiteral{ .Number = try std.fmt.parseFloat(f64, self.source[self.start..self.idx]) });
 }
 
 fn identifier(self: *Self) !?Token {
-    while (isAlphaNumeric(self.peek())) {
+    while (!self.isAtEnd() and isAlphaNumeric(self.peek())) {
         _ = self.advance();
     }
     // TODO

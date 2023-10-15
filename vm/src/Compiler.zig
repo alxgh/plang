@@ -1,4 +1,5 @@
 const std = @import("std");
+const env = @import("env.zig");
 const Scanner = @import("Scanner.zig");
 const Chunk = @import("Chunk.zig");
 const Values = @import("Values.zig");
@@ -36,6 +37,16 @@ fn getRule(op_t: Scanner.TokenType) *const ParseRule {
         .Slash => &.{ .infix = binary, .precedence = .Factor },
         .Star => &.{ .infix = binary, .precedence = .Factor },
         .Num => &.{ .prefix = number },
+        .False => &.{ .prefix = literal },
+        .True => &.{ .prefix = literal },
+        .Nil => &.{ .prefix = literal },
+        .Bang => &.{ .prefix = unary },
+        .Greater => &.{ .infix = binary, .precedence = .Comparison },
+        .Gte => &.{ .infix = binary, .precedence = .Comparison },
+        .Less => &.{ .infix = binary, .precedence = .Comparison },
+        .Lte => &.{ .infix = binary, .precedence = .Comparison },
+        .EqEq => &.{ .infix = binary, .precedence = .Equality },
+        .BangEq => &.{ .infix = binary, .precedence = .Comparison },
         else => &.{},
     };
 }
@@ -68,13 +79,15 @@ pub fn start(self: *Self, chunk: *Chunk) !void {
 
 fn end(self: *Self) !void {
     try self.emitOpByte(.Return);
-    try self.chunk.disassmble("code");
+    if (env.DebugPrintCode) {
+        try self.chunk.disassmble("code");
+    }
 }
 
 fn emitConst(self: *Self, val: Values.Value) !void {
     const c = try self.makeConst(val);
 
-    try self.emitMulti(.Constant, .{@as(u8, @intCast(c))});
+    try self.emitMulti(&[_]u8{ Chunk.OpCode.Constant.byte(), @as(u8, @intCast(c)) });
 }
 
 fn makeConst(self: *Self, val: Values.Value) !usize {
@@ -111,17 +124,24 @@ fn emitOpByte(self: *Self, op: Chunk.OpCode) !void {
     try self.chunk.writeOp(op, self.current.?.line);
 }
 
-fn emitMulti(self: *Self, op: Chunk.OpCode, bytes: anytype) !void {
-    const t = @TypeOf(bytes);
-    const ti = @typeInfo(t);
-    if (ti != .Struct) {
-        @compileError("emitMulti accpets struct.");
+fn emitMulti(self: *Self, bytes: []const u8) !void {
+    for (bytes) |byte| {
+        try self.emitByte(byte);
     }
-    try self.chunk.writeOp(op, self.current.?.line);
-    const fields = ti.Struct.fields;
-    inline for (fields) |field| {
-        try self.emitByte(@field(bytes, field.name));
-    }
+
+    // const t = @TypeOf(bytes);
+    // const ti = @typeInfo(t);
+    // if (ti != .Struct) {
+    //     @compileError("emitMulti accpets struct.");
+    // }
+    // const fields = ti.Struct.fields;
+    // inline for (fields) |field| {
+    //     if (field.type == u8) {
+    //         try self.emitByte(@field(bytes, field.name));
+    //     } else if (field.type == Chunk.OpCode) {} else {
+    //         @compileError("Invalid arg type, must be either 'u8' or 'Chunk.OpCode'");
+    //     }
+    // }
 }
 
 fn errAtCurrent(self: *Self, msg: []const u8, e: anyerror) anyerror!void {
@@ -143,7 +163,7 @@ fn expression(self: *Self) !void {
 }
 
 fn number(self: *Self) !void {
-    try self.emitConst(self.prev.?.literal.?.Double);
+    try self.emitConst(Values.numberValue(self.prev.?.literal.?.Number));
 }
 
 fn grouping(self: *Self) !void {
@@ -159,6 +179,7 @@ fn unary(self: *Self) !void {
 
     try switch (prev_t) {
         .Minus => self.emitOpByte(.Negate),
+        .Bang => self.emitOpByte(.Not),
         else => unreachable,
     };
 }
@@ -184,11 +205,26 @@ fn binary(self: *Self) !void {
     var prev_t = self.prev.?.t;
     var rule = getRule(prev_t);
     try self.parsePrecedence(@enumFromInt(@intFromEnum(rule.precedence) + 1));
-    try self.emitOpByte(switch (prev_t) {
-        .Plus => .Add,
-        .Minus => .Subtract,
-        .Star => .Multiply,
-        .Slash => .Divide,
+    try self.emitMulti(switch (prev_t) {
+        .Plus => &[_]u8{Chunk.OpCode.Add.byte()},
+        .Gte => &[_]u8{ Chunk.OpCode.Greater.byte(), Chunk.OpCode.Not.byte() },
+        .Minus => &[_]u8{Chunk.OpCode.Subtract.byte()},
+        .Star => &[_]u8{Chunk.OpCode.Multiply.byte()},
+        .Slash => &[_]u8{Chunk.OpCode.Divide.byte()},
+        .Greater => &[_]u8{Chunk.OpCode.Greater.byte()},
+        .Less => &[_]u8{Chunk.OpCode.Less.byte()},
+        .Lte => &[_]u8{ Chunk.OpCode.Less.byte(), Chunk.OpCode.Not.byte() },
+        .Eq => &[_]u8{Chunk.OpCode.Equal.byte()},
+        .BangEq => &[_]u8{ Chunk.OpCode.Equal.byte(), Chunk.OpCode.Not.byte() },
+        else => unreachable,
+    });
+}
+
+fn literal(self: *Self) !void {
+    try self.emitOpByte(switch (self.prev.?.t) {
+        .False => .False,
+        .True => .True,
+        .Nil => .Nil,
         else => unreachable,
     });
 }

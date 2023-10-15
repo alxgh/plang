@@ -12,9 +12,9 @@ const StackSize = 256;
 pub const Result = struct {};
 
 pub const Error = error{
-    Compile,
     Runtime,
     InvalidChunk,
+    InvalidOperand,
 };
 
 pub const StackError = error{
@@ -62,7 +62,9 @@ pub fn interpret(self: *Self, source: []const u8) !void {
     defer chunk.deinit();
     try compiler.start(&chunk);
     self.chunk = &chunk;
-    try self.run();
+    self.run() catch |err| {
+        return err;
+    };
 }
 
 const RunError = (std.os.WriteError || Error || StackError);
@@ -87,7 +89,7 @@ pub fn run(self: *Self) RunError!void {
         switch (op) {
             .Return => {
                 // just return
-                const ret = self.pop() catch 0;
+                const ret: Values.Value = self.pop() catch .{ .Number = 0 };
                 try writer.print("{}\n", .{ret});
                 return;
             },
@@ -97,18 +99,69 @@ pub fn run(self: *Self) RunError!void {
                 try writer.print("{}\n", .{constant});
             },
             .Negate => {
-                try self.push((try self.pop()) * -1);
+                const v = try self.pop();
+                if (v != .Number) {
+                    return Error.InvalidOperand;
+                }
+                try self.push(Values.numberValue((v.Number) * -1));
             },
             .Add, .Subtract, .Multiply, .Divide => {
-                const right = try self.pop();
-                const left = try self.pop();
-                try self.push(switch (op) {
+                const right_v = try self.pop();
+                const left_v = try self.pop();
+                if (right_v != .Number or left_v != .Number) {
+                    return Error.InvalidOperand;
+                }
+
+                const left = left_v.Number;
+                const right = right_v.Number;
+                try self.push(Values.numberValue(switch (op) {
                     .Add => left + right,
                     .Subtract => left - right,
                     .Multiply => left * right,
                     .Divide => left / right,
                     else => unreachable,
-                });
+                }));
+            },
+            .False, .True => {
+                try self.push(Values.boolValue(switch (op) {
+                    .True => true,
+                    .False => false,
+                    else => unreachable,
+                }));
+            },
+            .Nil => {
+                try self.push(Values.numberValue(0));
+            },
+            .Not => {
+                const v = try self.pop();
+                if (v != .Bool) {
+                    return Error.InvalidOperand;
+                }
+                try self.push(Values.boolValue(!v.Bool));
+            },
+            .Greater => {
+                const right_v = try self.pop();
+                const left_v = try self.pop();
+                if (left_v != .Number or right_v != .Number) {
+                    return Error.InvalidOperand;
+                }
+                try self.push(Values.boolValue(left_v.Number > right_v.Number));
+            },
+            .Less => {
+                const right_v = try self.pop();
+                const left_v = try self.pop();
+                if (left_v != .Number or right_v != .Number) {
+                    return Error.InvalidOperand;
+                }
+                try self.push(Values.boolValue(left_v.Number < right_v.Number));
+            },
+            .Equal => {
+                const right_v = try self.pop();
+                const left_v = try self.pop();
+                if (left_v != .Number or right_v != .Number) {
+                    return Error.InvalidOperand;
+                }
+                try self.push(Values.boolValue(left_v.Number == right_v.Number));
             },
         }
     }
