@@ -1,1 +1,1 @@
-"hi" + "byte"
+print "hu" + "du";

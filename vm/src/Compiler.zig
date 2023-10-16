@@ -74,7 +74,9 @@ pub fn deinit(self: *Self) void {
 pub fn start(self: *Self, chunk: *Chunk) !void {
     self.chunk = chunk;
     try self.advance();
-    try self.expression();
+    if (!(try self.match(.EOF))) {
+        try self.declaration();
+    }
     try self.end();
 }
 
@@ -117,32 +119,30 @@ fn consume(self: *Self, token_type: Scanner.TokenType, msg: []const u8) !void {
     unreachable;
 }
 
+fn match(self: *Self, t: Scanner.TokenType) !bool {
+    if (self.check(t)) {
+        try self.advance();
+        return true;
+    }
+    return false;
+}
+
+fn check(self: *Self, t: Scanner.TokenType) bool {
+    return self.current.?.t == t;
+}
+
 fn emitByte(self: *Self, byte: u8) !void {
     try self.chunk.write(byte, self.current.?.line);
 }
 
 fn emitOpByte(self: *Self, op: Chunk.OpCode) !void {
-    try self.chunk.writeOp(op, self.current.?.line);
+    try self.chunk.write(op.byte(), self.current.?.line);
 }
 
 fn emitMulti(self: *Self, bytes: []const u8) !void {
     for (bytes) |byte| {
         try self.emitByte(byte);
     }
-
-    // const t = @TypeOf(bytes);
-    // const ti = @typeInfo(t);
-    // if (ti != .Struct) {
-    //     @compileError("emitMulti accpets struct.");
-    // }
-    // const fields = ti.Struct.fields;
-    // inline for (fields) |field| {
-    //     if (field.type == u8) {
-    //         try self.emitByte(@field(bytes, field.name));
-    //     } else if (field.type == Chunk.OpCode) {} else {
-    //         @compileError("Invalid arg type, must be either 'u8' or 'Chunk.OpCode'");
-    //     }
-    // }
 }
 
 fn errAtCurrent(self: *Self, msg: []const u8, e: anyerror) anyerror!void {
@@ -157,6 +157,22 @@ fn errAt(self: *Self, msg: []const u8, token: Scanner.Token, e: anyerror) anyerr
     _ = self;
     try stderr.print("Error at token: '{s}', line '{}': \n\t{s}\n", .{ token.lexeme, token.line, msg });
     return e;
+}
+
+fn declaration(self: *Self) !void {
+    return self.statement();
+}
+
+fn statement(self: *Self) !void {
+    if (try self.match(.Print)) {
+        try self.printStmt();
+    }
+}
+
+fn printStmt(self: *Self) !void {
+    try self.expression();
+    try self.consume(.Semicolon, "Expect ';' after value.");
+    try self.emitOpByte(.Print);
 }
 
 fn expression(self: *Self) !void {

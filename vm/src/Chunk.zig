@@ -17,6 +17,8 @@ pub const OpCode = enum(u8) {
     Greater,
     Less,
 
+    Print,
+
     pub fn byte(oc: OpCode) u8 {
         return @intFromEnum(oc);
     }
@@ -75,10 +77,6 @@ pub fn getByte(self: *Self, idx: usize) u8 {
 pub fn write(self: *Self, byte: u8, line: u64) Allocator.Error!void {
     try self.code.append(byte);
     try self.lines.append(line);
-}
-
-pub fn writeOp(self: *Self, byte: OpCode, line: u64) Allocator.Error!void {
-    return self.write(@intFromEnum(byte), line);
 }
 
 pub fn addConstant(self: *Self, value: Values.Value) !usize {

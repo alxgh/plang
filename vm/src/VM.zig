@@ -90,14 +90,12 @@ pub fn run(self: *Self) RunError!void {
         switch (op) {
             .Return => {
                 // just return
-                const ret: Values.Value = self.pop() catch .{ .Number = 0 };
-                try Values.print(writer, ret);
+                _ = self.pop() catch .{ .Number = 0 };
                 return;
             },
             .Constant => {
                 var constant = self.readConst();
                 try self.push(constant);
-                try Values.print(writer, constant);
             },
             .Negate => {
                 const v = try self.pop();
@@ -197,6 +195,10 @@ pub fn run(self: *Self) RunError!void {
                     },
                     else => return Error.UnsupportedOperation,
                 }
+            },
+            .Print => {
+                const ret: Values.Value = self.pop() catch .{ .Number = 0 };
+                try Values.print(writer, ret);
             },
         }
     }
