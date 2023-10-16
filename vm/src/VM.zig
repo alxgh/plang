@@ -15,6 +15,7 @@ pub const Error = error{
     Runtime,
     InvalidChunk,
     InvalidOperand,
+    UnsupportedOperation,
 };
 
 pub const StackError = error{
@@ -67,7 +68,7 @@ pub fn interpret(self: *Self, source: []const u8) !void {
     };
 }
 
-const RunError = (std.os.WriteError || Error || StackError);
+const RunError = (std.os.WriteError || Error || StackError || std.mem.Allocator.Error);
 
 pub fn run(self: *Self) RunError!void {
     if (self.chunk == null) {
@@ -90,13 +91,13 @@ pub fn run(self: *Self) RunError!void {
             .Return => {
                 // just return
                 const ret: Values.Value = self.pop() catch .{ .Number = 0 };
-                try writer.print("{}\n", .{ret});
+                try Values.print(writer, ret);
                 return;
             },
             .Constant => {
                 var constant = self.readConst();
                 try self.push(constant);
-                try writer.print("{}\n", .{constant});
+                try Values.print(writer, constant);
             },
             .Negate => {
                 const v = try self.pop();
@@ -108,19 +109,38 @@ pub fn run(self: *Self) RunError!void {
             .Add, .Subtract, .Multiply, .Divide => {
                 const right_v = try self.pop();
                 const left_v = try self.pop();
-                if (right_v != .Number or left_v != .Number) {
+
+                if (@intFromEnum(left_v) != @intFromEnum(right_v)) {
                     return Error.InvalidOperand;
                 }
-
-                const left = left_v.Number;
-                const right = right_v.Number;
-                try self.push(Values.numberValue(switch (op) {
-                    .Add => left + right,
-                    .Subtract => left - right,
-                    .Multiply => left * right,
-                    .Divide => left / right,
-                    else => unreachable,
-                }));
+                switch (left_v) {
+                    .Number => |left| {
+                        const right = right_v.Number;
+                        try self.push(Values.numberValue(switch (op) {
+                            .Add => left + right,
+                            .Subtract => left - right,
+                            .Multiply => left * right,
+                            .Divide => left / right,
+                            else => unreachable,
+                        }));
+                    },
+                    .Object => |obj| {
+                        if (@intFromEnum(left_v.Object.*) != @intFromEnum(right_v.Object.*)) {
+                            return Error.InvalidOperand;
+                        }
+                        switch (obj.*) {
+                            .String => {
+                                var str = try self.allocator.alloc(u8, left_v.Object.String.len + right_v.Object.String.len);
+                                std.mem.copy(u8, str[0..left_v.Object.String.len], left_v.Object.String);
+                                std.mem.copy(u8, str[left_v.Object.String.len..], right_v.Object.String);
+                                var object = try self.allocator.create(Values.Object);
+                                object.*.String = str;
+                                try self.push(Values.objValue(object));
+                            },
+                        }
+                    },
+                    else => return Error.UnsupportedOperation,
+                }
             },
             .False, .True => {
                 try self.push(Values.boolValue(switch (op) {
@@ -158,10 +178,25 @@ pub fn run(self: *Self) RunError!void {
             .Equal => {
                 const right_v = try self.pop();
                 const left_v = try self.pop();
-                if (left_v != .Number or right_v != .Number) {
+                if (@intFromEnum(left_v) != @intFromEnum(right_v)) {
                     return Error.InvalidOperand;
                 }
-                try self.push(Values.boolValue(left_v.Number == right_v.Number));
+                switch (left_v) {
+                    .Number => {
+                        try self.push(Values.boolValue(left_v.Number == right_v.Number));
+                    },
+                    .Object => |obj| {
+                        if (@intFromEnum(left_v.Object.*) != @intFromEnum(right_v.Object.*)) {
+                            return Error.InvalidOperand;
+                        }
+                        switch (obj.*) {
+                            .String => {
+                                try self.push(Values.boolValue(std.mem.eql(u8, left_v.Object.String, right_v.Object.String)));
+                            },
+                        }
+                    },
+                    else => return Error.UnsupportedOperation,
+                }
             },
         }
     }

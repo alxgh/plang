@@ -100,8 +100,7 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
             // constantInstr
             const constant = self.code.items[offset + 1];
             try stdout.writer().print("OP_CONSTANT: {d:0>4} ", .{offset});
-            try stdout.writer().print("{}", .{self.constants.values.items[@as(usize, constant)]});
-            try stdout.writer().print("\n", .{});
+            try Values.print(stdout.writer(), self.constants.values.items[@as(usize, constant)]);
             return offset + 2;
         },
         else => |v| {

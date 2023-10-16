@@ -47,6 +47,7 @@ fn getRule(op_t: Scanner.TokenType) *const ParseRule {
         .Lte => &.{ .infix = binary, .precedence = .Comparison },
         .EqEq => &.{ .infix = binary, .precedence = .Equality },
         .BangEq => &.{ .infix = binary, .precedence = .Comparison },
+        .Str => &.{ .prefix = string },
         else => &.{},
     };
 }
@@ -214,7 +215,7 @@ fn binary(self: *Self) !void {
         .Greater => &[_]u8{Chunk.OpCode.Greater.byte()},
         .Less => &[_]u8{Chunk.OpCode.Less.byte()},
         .Lte => &[_]u8{ Chunk.OpCode.Less.byte(), Chunk.OpCode.Not.byte() },
-        .Eq => &[_]u8{Chunk.OpCode.Equal.byte()},
+        .EqEq => &[_]u8{Chunk.OpCode.Equal.byte()},
         .BangEq => &[_]u8{ Chunk.OpCode.Equal.byte(), Chunk.OpCode.Not.byte() },
         else => unreachable,
     });
@@ -227,4 +228,13 @@ fn literal(self: *Self) !void {
         .Nil => .Nil,
         else => unreachable,
     });
+}
+
+fn string(self: *Self) !void {
+    const orig_str = self.prev.?.literal.?.String;
+    var object = try self.allocator.create(Values.Object);
+    var str = try self.allocator.alloc(u8, orig_str.len);
+    std.mem.copy(u8, str, orig_str);
+    object.*.String = str;
+    try self.emitConst(Values.objValue(object));
 }

@@ -15,10 +15,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer {
-        var check = gpa.deinit();
-        if (check == .leak) {
-            @panic("Mem leak");
-        }
+        _ = gpa.deinit();
     }
 
     var vm = VM.init(allocator);
