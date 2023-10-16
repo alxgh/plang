@@ -7,8 +7,9 @@ pub const Value = union(enum) {
     Object: *Object,
 };
 
-pub const Object = union(enum) {
-    String: StringObject,
+pub const Object = struct {
+    value: union(enum) { String: StringObject },
+    parent: ?*Object,
 };
 
 pub const StringObject = []const u8;
@@ -51,7 +52,7 @@ pub fn write(self: *Self, value: Value) Allocator.Error!usize {
 pub fn print(writer: anytype, v: Value) !void {
     switch (v) {
         .Object => |obj| {
-            switch (obj.*) {
+            switch (obj.value) {
                 .String => |str| try writer.print("{s}\n", .{str}),
             }
         },

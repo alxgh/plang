@@ -231,10 +231,5 @@ fn literal(self: *Self) !void {
 }
 
 fn string(self: *Self) !void {
-    const orig_str = self.prev.?.literal.?.String;
-    var object = try self.allocator.create(Values.Object);
-    var str = try self.allocator.alloc(u8, orig_str.len);
-    std.mem.copy(u8, str, orig_str);
-    object.*.String = str;
-    try self.emitConst(Values.objValue(object));
+    try self.emitConst(Values.objValue(try self.chunk.allocStr(self.prev.?.literal.?.String)));
 }

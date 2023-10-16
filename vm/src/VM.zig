@@ -125,16 +125,16 @@ pub fn run(self: *Self) RunError!void {
                         }));
                     },
                     .Object => |obj| {
-                        if (@intFromEnum(left_v.Object.*) != @intFromEnum(right_v.Object.*)) {
+                        if (@intFromEnum(left_v.Object.value) != @intFromEnum(right_v.Object.value)) {
                             return Error.InvalidOperand;
                         }
-                        switch (obj.*) {
+                        switch (obj.value) {
                             .String => {
-                                var str = try self.allocator.alloc(u8, left_v.Object.String.len + right_v.Object.String.len);
-                                std.mem.copy(u8, str[0..left_v.Object.String.len], left_v.Object.String);
-                                std.mem.copy(u8, str[left_v.Object.String.len..], right_v.Object.String);
-                                var object = try self.allocator.create(Values.Object);
-                                object.*.String = str;
+                                var str = try self.allocator.alloc(u8, left_v.Object.value.String.len + right_v.Object.value.String.len);
+                                std.mem.copy(u8, str[0..left_v.Object.value.String.len], left_v.Object.value.String);
+                                std.mem.copy(u8, str[left_v.Object.value.String.len..], right_v.Object.value.String);
+                                var object = try self.chunk.?.allocObj();
+                                object.*.value.String = str;
                                 try self.push(Values.objValue(object));
                             },
                         }
@@ -186,12 +186,12 @@ pub fn run(self: *Self) RunError!void {
                         try self.push(Values.boolValue(left_v.Number == right_v.Number));
                     },
                     .Object => |obj| {
-                        if (@intFromEnum(left_v.Object.*) != @intFromEnum(right_v.Object.*)) {
+                        if (@intFromEnum(left_v.Object.value) != @intFromEnum(right_v.Object.value)) {
                             return Error.InvalidOperand;
                         }
-                        switch (obj.*) {
+                        switch (obj.value) {
                             .String => {
-                                try self.push(Values.boolValue(std.mem.eql(u8, left_v.Object.String, right_v.Object.String)));
+                                try self.push(Values.boolValue(std.mem.eql(u8, left_v.Object.value.String, right_v.Object.value.String)));
                             },
                         }
                     },
