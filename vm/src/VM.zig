@@ -2,6 +2,7 @@ const std = @import("std");
 const Values = @import("Values.zig");
 const Chunk = @import("Chunk.zig");
 const Compiler = @import("Compiler.zig");
+const util = @import("./util.zig");
 const env = @import("env.zig");
 
 const stdout = std.io.getStdOut();
@@ -16,6 +17,8 @@ pub const Error = error{
     InvalidChunk,
     InvalidOperand,
     UnsupportedOperation,
+    InvalidByte,
+    UndefinedVariable,
 };
 
 pub const StackError = error{
@@ -30,16 +33,18 @@ chunk: ?*Chunk = null,
 ip: usize,
 stack: [StackSize]Values.Value = undefined,
 stack_pointer: usize = 0,
+globals: std.StringHashMap(Values.Value),
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
         .allocator = allocator,
         .ip = 0,
+        .globals = std.StringHashMap(Values.Value).init(allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
-    _ = self;
+    self.globals.deinit();
 }
 
 fn readByte(self: *Self) u8 {
@@ -63,9 +68,7 @@ pub fn interpret(self: *Self, source: []const u8) !void {
     defer chunk.deinit();
     try compiler.start(&chunk);
     self.chunk = &chunk;
-    self.run() catch |err| {
-        return err;
-    };
+    return self.run();
 }
 
 const RunError = (std.os.WriteError || Error || StackError || std.mem.Allocator.Error);
@@ -78,19 +81,30 @@ pub fn run(self: *Self) RunError!void {
     var chunk = self.chunk.?;
     while (self.ip < chunk.len()) {
         if (env.DebugExecutionTrace) {
-            try writer.print("===STACK===\n", .{});
+            try writer.print(util.Color.Green.bgWrap("===STACK===") ++ "\n", .{});
             for (0..self.stack_pointer) |sp| {
                 try writer.print("[{}]", .{self.stack[sp]});
             }
-            try writer.print("\n===STACK-END===\n", .{});
+            try writer.print("\n" ++ util.Color.Green.bgWrap("===STACK-END===") ++ "\n", .{});
+
+            try writer.print("\n" ++ util.Color.Cyan.bgWrap("===GLOBAL-VARS===") ++ "\n", .{});
+            var it = self.globals.iterator();
+            while (it.next()) |e| {
+                try writer.print(util.Color.Magenta.wrap("Name") ++ ": {s}, " ++ util.Color.Magenta.wrap("Value") ++ ": {}\n", .{ e.key_ptr.*, e.value_ptr.* });
+            }
+            try writer.print("\n" ++ util.Color.Cyan.bgWrap("===GLOBAL-VARS-END===") ++ "\n", .{});
+
             _ = try chunk.disInstr(self.ip);
         }
         var instruction = self.readByte();
         const op = @as(Chunk.OpCode, @enumFromInt(instruction));
         switch (op) {
+            .Pop => {
+                try self.popAndIgnore();
+            },
             .Return => {
                 // just return
-                _ = self.pop() catch .{ .Number = 0 };
+                self.popAndIgnore() catch {};
                 return;
             },
             .Constant => {
@@ -200,6 +214,38 @@ pub fn run(self: *Self) RunError!void {
                 const ret: Values.Value = self.pop() catch .{ .Number = 0 };
                 try Values.print(writer, ret);
             },
+            .DefineGlobal => {
+                const name = self.readConst();
+                if (name != .Object or name.Object.value != .String) {
+                    return Error.InvalidByte;
+                }
+                const value = try self.pop();
+                try self.globals.put(name.Object.value.String, value);
+            },
+            .GetGlobal => {
+                const name = self.readConst();
+                var value: ?Values.Value = null;
+                if (name != .Object or name.Object.value != .String) {
+                    return Error.InvalidByte;
+                }
+                value = self.globals.get(name.Object.value.String);
+                if (value) |v| {
+                    try self.push(v);
+                } else {
+                    return Error.UndefinedVariable;
+                }
+            },
+            .SetGlobal => {
+                const name = self.readConst();
+                if (name != .Object or name.Object.value != .String) {
+                    return Error.InvalidByte;
+                }
+                const var_name = name.Object.value.String;
+                if (!self.globals.contains(var_name)) {
+                    return Error.UndefinedVariable;
+                }
+                try self.globals.put(var_name, try self.peek(0));
+            },
         }
     }
 }
@@ -218,6 +264,21 @@ pub fn pop(self: *Self) StackError!Values.Value {
     }
     self.stack_pointer -= 1;
     return self.stack[self.stack_pointer];
+}
+
+pub fn peek(self: *Self, n: usize) StackError!Values.Value {
+    if (self.stack_pointer == 0) {
+        return StackError.Empty;
+    }
+    var pp = self.stack_pointer - (1 + n);
+    if (pp < 0) {
+        return StackError.Empty;
+    }
+    return self.stack[pp];
+}
+
+pub fn popAndIgnore(self: *Self) StackError!void {
+    _ = try self.pop();
 }
 
 pub fn resetStack(self: *Self) void {

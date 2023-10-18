@@ -18,6 +18,10 @@ pub const OpCode = enum(u8) {
     Less,
 
     Print,
+    Pop,
+    DefineGlobal,
+    GetGlobal,
+    SetGlobal,
 
     pub fn byte(oc: OpCode) u8 {
         return @intFromEnum(oc);
@@ -104,23 +108,17 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
             try stdout.writer().print("OP_RETURN\n", .{});
             return offset + 1;
         },
-        .Negate, .Add, .Subtract, .Multiply, .Divide => |v| {
-            //simpleInstruction
-            try stdout.writer().print("{s}\n", .{@tagName(v)});
-            return offset + 1;
-        },
-        .Constant => {
+        .Constant, .DefineGlobal, .GetGlobal, .SetGlobal => |v| {
             // constantInstr
             const constant = self.code.items[offset + 1];
-            try stdout.writer().print("OP_CONSTANT: {d:0>4} ", .{offset});
+            try stdout.writer().print("{}: {d:0>4} ", .{ v, offset });
             try Values.print(stdout.writer(), self.constants.values.items[@as(usize, constant)]);
             return offset + 2;
         },
-        else => |v| {
-            try stdout.writer().print("{}: {d:0>4}\n", .{ v, offset });
-
+        .Negate, .Add, .Subtract, .Multiply, .Divide, .Nil, .True, .False, .Not, .Pop, .Greater, .Less, .Equal, .Print => |v| {
+            try stdout.writer().print("{s}\n", .{@tagName(v)});
             return offset + 1;
-        }, // TODO
+        },
     }
 }
 
