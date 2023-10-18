@@ -246,6 +246,14 @@ pub fn run(self: *Self) RunError!void {
                 }
                 try self.globals.put(var_name, try self.peek(0));
             },
+            .SetLocal => {
+                const slot = self.readByte();
+                self.stack[@intCast(slot)] = try self.peek(0);
+            },
+            .GetLocal => {
+                const slot = self.readByte();
+                try self.push(self.stack[@intCast(slot)]);
+            },
         }
     }
 }

@@ -22,6 +22,8 @@ pub const OpCode = enum(u8) {
     DefineGlobal,
     GetGlobal,
     SetGlobal,
+    GetLocal,
+    SetLocal,
 
     pub fn byte(oc: OpCode) u8 {
         return @intFromEnum(oc);
@@ -118,6 +120,11 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
         .Negate, .Add, .Subtract, .Multiply, .Divide, .Nil, .True, .False, .Not, .Pop, .Greater, .Less, .Equal, .Print => |v| {
             try stdout.writer().print("{s}\n", .{@tagName(v)});
             return offset + 1;
+        },
+        .GetLocal, .SetLocal => |v| {
+            const slot = self.code.items[offset + 1];
+            try stdout.writer().print("{}: {d:0>4}\n", .{ v, slot });
+            return offset + 2;
         },
     }
 }

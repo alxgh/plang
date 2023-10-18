@@ -53,6 +53,11 @@ fn getRule(op_t: Scanner.TokenType) *const ParseRule {
     };
 }
 
+const Local = struct {
+    name: Scanner.Token,
+    depth: i64,
+};
+
 const Self = @This();
 
 allocator: Allocator,
@@ -60,6 +65,9 @@ scanner: Scanner,
 current: ?Scanner.Token = null,
 prev: ?Scanner.Token = null,
 chunk: *Chunk = undefined,
+locals: [256]Local = undefined,
+local_cnt: usize = 0,
+scope_depth: i64 = 0,
 
 pub fn init(allocator: Allocator, source: []const u8) Self {
     return .{
@@ -182,15 +190,70 @@ fn varDecl(self: *Self) !void {
 
 fn parseVar(self: *Self, errMsg: []const u8) !usize {
     try self.consume(.Iden, errMsg);
+    try self.declVar();
+    if (self.scope_depth > 0) return 0;
     return self.idenConst(self.prev.?);
+}
+
+fn declVar(self: *Self) !void {
+    if (self.scope_depth == 0) return;
+    var name = self.prev.?;
+    try self.addLocal(name);
+}
+
+fn addLocal(self: *Self, name: Scanner.Token) !void {
+    if (self.local_cnt == 256) {
+        return error.TooManyLocalVarsInBlock;
+    }
+    var i = @as(i64, @intCast(self.local_cnt)) - 1;
+    while (i >= 0) : (i -= 1) {
+        const local = self.locals[@intCast(i)];
+        if (local.depth != -1 and local.depth < self.scope_depth) {
+            break;
+        }
+        if (std.mem.eql(u8, local.name.lexeme, name.lexeme)) {
+            return error.CannotRedefineVariableInSameScope;
+        }
+    }
+    var local = Local{
+        .name = name,
+        .depth = -1,
+    };
+    self.locals[self.local_cnt] = local;
+    self.local_cnt += 1;
+}
+fn beginScope(self: *Self) void {
+    self.scope_depth += 1;
+}
+
+fn endScope(self: *Self) !void {
+    self.scope_depth -= 1;
+    while (self.local_cnt > 0 and self.locals[self.local_cnt - 1].depth > self.scope_depth) {
+        try self.emitOpByte(.Pop);
+        if (self.local_cnt == 0) {
+            break;
+        }
+        self.local_cnt -= 1;
+    }
 }
 
 fn statement(self: *Self) !void {
     if (try self.match(.Print)) {
         try self.printStmt();
+    } else if (try self.match(.LeftBrace)) {
+        self.beginScope();
+        try self.block();
+        try self.endScope();
     } else {
         try self.expressionStmt();
     }
+}
+
+fn block(self: *Self) !void {
+    while (!self.check(.RightBrace) and !self.check(.EOF)) {
+        try self.declaration();
+    }
+    try self.consume(.RightBrace, "Expect '}' after block.");
 }
 
 fn printStmt(self: *Self) !void {
@@ -291,13 +354,34 @@ fn variable(self: *Self, can_assign: bool) !void {
 }
 
 fn namedVar(self: *Self, tok: Scanner.Token, can_assign: bool) !void {
-    const arg = try self.idenConst(tok);
+    var get_op: Chunk.OpCode = .GetLocal;
+    var set_op: Chunk.OpCode = .SetLocal;
+    var arg = try self.resolveLocal(tok);
+    if (arg == -1) {
+        arg = @intCast(try self.idenConst(tok));
+        get_op = .GetGlobal;
+        set_op = .SetGlobal;
+    }
     if (can_assign and try self.match(.Eq)) {
         try self.expression();
-        try self.emitMulti(&[_]u8{ Chunk.OpCode.SetGlobal.byte(), @intCast(arg) });
+        try self.emitMulti(&[_]u8{ set_op.byte(), @intCast(arg) });
     } else {
-        try self.emitMulti(&[_]u8{ Chunk.OpCode.GetGlobal.byte(), @intCast(arg) });
+        try self.emitMulti(&[_]u8{ get_op.byte(), @intCast(arg) });
     }
+}
+
+fn resolveLocal(self: *Self, name: Scanner.Token) !i64 {
+    var i = @as(i64, @intCast(self.local_cnt)) - 1;
+    while (i >= 0) : (i -= 1) {
+        var local = self.locals[@intCast(i)];
+        if (std.mem.eql(u8, local.name.lexeme, name.lexeme)) {
+            if (local.depth == -1) {
+                return error.CantUseInItsOwnInitializer;
+            }
+            return i;
+        }
+    }
+    return -1;
 }
 
 fn string(self: *Self, can_assign: bool) !void {
@@ -310,5 +394,9 @@ fn idenConst(self: *Self, t: Scanner.Token) !usize {
 }
 
 fn defGlobalVar(self: *Self, global: u8) !void {
+    if (self.scope_depth > 0) {
+        self.locals[self.local_cnt - 1].depth = self.scope_depth;
+        return;
+    }
     try self.emitMulti(&[_]u8{ Chunk.OpCode.DefineGlobal.byte(), global });
 }
