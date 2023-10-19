@@ -1,3 +1,4 @@
+const MaxJump = 2 ^ 16;
 const std = @import("std");
 const env = @import("env.zig");
 const Scanner = @import("Scanner.zig");
@@ -49,6 +50,8 @@ fn getRule(op_t: Scanner.TokenType) *const ParseRule {
         .BangEq => &.{ .infix = binary, .precedence = .Comparison },
         .Str => &.{ .prefix = string },
         .Iden => &.{ .prefix = variable },
+        // .Or => &.{ .infix = or_, .precedence = .Or },
+        // .And => &.{ .infix = and_, .precedence = .And },
         else => &.{},
     };
 }
@@ -173,8 +176,33 @@ fn errAt(self: *Self, msg: []const u8, token: Scanner.Token, e: anyerror) anyerr
 fn declaration(self: *Self) !void {
     if (try self.match(.Var)) {
         return self.varDecl();
+    } else if (try self.match(.If)) {
+        return self.ifStmt();
     }
     return self.statement();
+}
+
+fn ifStmt(self: *Self) !void {
+    try self.consume(.LeftParen, "Expect '(' after 'if'.");
+    try self.expression();
+    try self.consume(.RightParen, "Expect ')' after condition.");
+    var jump = try self.emitJump(.JumpIfFalse);
+    try self.statement();
+    try self.patchJump(jump);
+}
+
+fn emitJump(self: *Self, jump_type: Chunk.OpCode) !usize {
+    try self.emitMulti(&[_]u8{ jump_type.byte(), 0xff, 0xff });
+    return self.chunk.code.items.len - 2;
+}
+
+fn patchJump(self: *Self, offset: usize) !void {
+    const jump = self.chunk.code.items.len - offset - 2;
+    if (jump > MaxJump) {
+        return error.MaxJumpLines;
+    }
+    self.chunk.code.items[offset] = @as(u8, @intCast(jump >> 8)) & 0xff;
+    self.chunk.code.items[offset + 1] = @as(u8, @intCast(jump)) & 0xff;
 }
 
 fn varDecl(self: *Self) !void {

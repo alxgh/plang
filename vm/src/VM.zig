@@ -53,6 +53,12 @@ fn readByte(self: *Self) u8 {
     return byte;
 }
 
+fn readu16(self: *Self) u16 {
+    var n = self.chunk.?.getu16(self.ip);
+    self.ip += 2;
+    return n;
+}
+
 fn readOp(self: *Self) Chunk.OpCode {
     return @enumFromInt(self.readByte());
 }
@@ -253,6 +259,13 @@ pub fn run(self: *Self) RunError!void {
             .GetLocal => {
                 const slot = self.readByte();
                 try self.push(self.stack[@intCast(slot)]);
+            },
+            .JumpIfFalse => {
+                var offset = self.readu16();
+                const e = try self.peek(0);
+                if (e != .Bool or e.Bool == false) {
+                    self.ip += offset;
+                }
             },
         }
     }

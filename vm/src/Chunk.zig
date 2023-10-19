@@ -25,6 +25,9 @@ pub const OpCode = enum(u8) {
     GetLocal,
     SetLocal,
 
+    // JumpIfTrue,
+    JumpIfFalse,
+
     pub fn byte(oc: OpCode) u8 {
         return @intFromEnum(oc);
     }
@@ -80,6 +83,12 @@ pub fn getByte(self: *Self, idx: usize) u8 {
     return self.code.items[idx];
 }
 
+pub fn getu16(self: *Self, offset: usize) u16 {
+    const upper = self.code.items[offset];
+    const lower = self.code.items[offset + 1];
+    return @intCast((@as(u16, @intCast(upper)) << 8) | lower);
+}
+
 pub fn write(self: *Self, byte: u8, line: u64) Allocator.Error!void {
     try self.code.append(byte);
     try self.lines.append(line);
@@ -125,6 +134,11 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
             const slot = self.code.items[offset + 1];
             try stdout.writer().print("{}: {d:0>4}\n", .{ v, slot });
             return offset + 2;
+        },
+        .JumpIfFalse => |v| {
+            const addr = offset + 3 + self.getu16(offset + 1);
+            try stdout.writer().print("{}: {d:0>4}\n", .{ v, addr });
+            return offset + 3;
         },
     }
 }
