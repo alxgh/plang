@@ -87,9 +87,9 @@ pub fn run(self: *Self) RunError!void {
     var chunk = self.chunk.?;
     while (self.ip < chunk.len()) {
         if (env.DebugExecutionTrace) {
-            try writer.print(util.Color.Green.bgWrap("===STACK===") ++ "\n", .{});
+            try writer.print(util.Color.Green.bgWrap("===STACK==="), .{});
             for (0..self.stack_pointer) |sp| {
-                try writer.print("[{}]", .{self.stack[sp]});
+                try writer.print("\n{}", .{self.stack[sp]});
             }
             try writer.print("\n" ++ util.Color.Green.bgWrap("===STACK-END===") ++ "\n", .{});
 
@@ -259,6 +259,10 @@ pub fn run(self: *Self) RunError!void {
             .GetLocal => {
                 const slot = self.readByte();
                 try self.push(self.stack[@intCast(slot)]);
+            },
+            .Jump => {
+                var offset = self.readu16();
+                self.ip += offset;
             },
             .JumpIfFalse => {
                 var offset = self.readu16();

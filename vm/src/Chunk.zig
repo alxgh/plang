@@ -25,7 +25,7 @@ pub const OpCode = enum(u8) {
     GetLocal,
     SetLocal,
 
-    // JumpIfTrue,
+    Jump,
     JumpIfFalse,
 
     pub fn byte(oc: OpCode) u8 {
@@ -135,7 +135,7 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
             try stdout.writer().print("{}: {d:0>4}\n", .{ v, slot });
             return offset + 2;
         },
-        .JumpIfFalse => |v| {
+        .JumpIfFalse, .Jump => |v| {
             const addr = offset + 3 + self.getu16(offset + 1);
             try stdout.writer().print("{}: {d:0>4}\n", .{ v, addr });
             return offset + 3;

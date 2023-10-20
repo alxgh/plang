@@ -176,8 +176,6 @@ fn errAt(self: *Self, msg: []const u8, token: Scanner.Token, e: anyerror) anyerr
 fn declaration(self: *Self) !void {
     if (try self.match(.Var)) {
         return self.varDecl();
-    } else if (try self.match(.If)) {
-        return self.ifStmt();
     }
     return self.statement();
 }
@@ -188,7 +186,12 @@ fn ifStmt(self: *Self) !void {
     try self.consume(.RightParen, "Expect ')' after condition.");
     var jump = try self.emitJump(.JumpIfFalse);
     try self.statement();
+    const else_jump = try self.emitJump(.Jump);
     try self.patchJump(jump);
+    if (try self.match(.Else)) {
+        try self.statement();
+    }
+    try self.patchJump(else_jump);
 }
 
 fn emitJump(self: *Self, jump_type: Chunk.OpCode) !usize {
@@ -250,6 +253,7 @@ fn addLocal(self: *Self, name: Scanner.Token) !void {
     self.locals[self.local_cnt] = local;
     self.local_cnt += 1;
 }
+
 fn beginScope(self: *Self) void {
     self.scope_depth += 1;
 }
@@ -272,6 +276,8 @@ fn statement(self: *Self) !void {
         self.beginScope();
         try self.block();
         try self.endScope();
+    } else if (try self.match(.If)) {
+        return self.ifStmt();
     } else {
         try self.expressionStmt();
     }
