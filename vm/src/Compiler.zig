@@ -1,4 +1,4 @@
-const MaxJump = 2 ^ 16;
+const MaxJump = 65536;
 const std = @import("std");
 const env = @import("env.zig");
 const Scanner = @import("Scanner.zig");
@@ -208,6 +208,17 @@ fn patchJump(self: *Self, offset: usize) !void {
     self.chunk.code.items[offset + 1] = @as(u8, @intCast(jump)) & 0xff;
 }
 
+fn createBackwardJump(self: *Self, offset: usize) !void {
+    const j = try self.emitJump(.BackJump);
+    const jump = self.chunk.code.items.len - offset;
+    std.debug.print("{}\n", .{jump});
+    if (jump > MaxJump) {
+        return error.MaxJumpLines;
+    }
+    self.chunk.code.items[j] = @as(u8, @intCast(jump >> 8)) & 0xff;
+    self.chunk.code.items[j + 1] = @as(u8, @intCast(jump)) & 0xff;
+}
+
 fn varDecl(self: *Self) !void {
     var global = try self.parseVar("Expect variable name");
     if (try self.match(.Eq)) {
@@ -278,9 +289,24 @@ fn statement(self: *Self) !void {
         try self.endScope();
     } else if (try self.match(.If)) {
         return self.ifStmt();
+    } else if (try self.match(.While)) {
+        return self.whileStmt();
     } else {
         try self.expressionStmt();
     }
+}
+
+fn whileStmt(self: *Self) !void {
+    var loopStart = self.chunk.code.items.len;
+    try self.consume(.LeftParen, "Expect '(' after while stmt");
+    try self.expression();
+    try self.consume(.RightParen, "Expect ')' after condition");
+    const exit_jump = try self.emitJump(.JumpIfFalse);
+    try self.emitOpByte(.Pop);
+    try self.statement();
+    try self.createBackwardJump(loopStart);
+    try self.patchJump(exit_jump);
+    try self.emitOpByte(.Pop);
 }
 
 fn block(self: *Self) !void {
@@ -378,13 +404,13 @@ fn binary(self: *Self, can_assign: bool) !void {
     try self.parsePrecedence(@enumFromInt(@intFromEnum(rule.precedence) + 1));
     try self.emitMulti(switch (prev_t) {
         .Plus => &[_]u8{Chunk.OpCode.Add.byte()},
-        .Gte => &[_]u8{ Chunk.OpCode.Greater.byte(), Chunk.OpCode.Not.byte() },
+        .Gte => &[_]u8{ Chunk.OpCode.Less.byte(), Chunk.OpCode.Not.byte() },
         .Minus => &[_]u8{Chunk.OpCode.Subtract.byte()},
         .Star => &[_]u8{Chunk.OpCode.Multiply.byte()},
         .Slash => &[_]u8{Chunk.OpCode.Divide.byte()},
         .Greater => &[_]u8{Chunk.OpCode.Greater.byte()},
         .Less => &[_]u8{Chunk.OpCode.Less.byte()},
-        .Lte => &[_]u8{ Chunk.OpCode.Less.byte(), Chunk.OpCode.Not.byte() },
+        .Lte => &[_]u8{ Chunk.OpCode.Greater.byte(), Chunk.OpCode.Not.byte() },
         .EqEq => &[_]u8{Chunk.OpCode.Equal.byte()},
         .BangEq => &[_]u8{ Chunk.OpCode.Equal.byte(), Chunk.OpCode.Not.byte() },
         else => unreachable,

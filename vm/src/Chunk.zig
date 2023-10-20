@@ -27,6 +27,7 @@ pub const OpCode = enum(u8) {
 
     Jump,
     JumpIfFalse,
+    BackJump,
 
     pub fn byte(oc: OpCode) u8 {
         return @intFromEnum(oc);
@@ -137,6 +138,11 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
         },
         .JumpIfFalse, .Jump => |v| {
             const addr = offset + 3 + self.getu16(offset + 1);
+            try stdout.writer().print("{}: {d:0>4}\n", .{ v, addr });
+            return offset + 3;
+        },
+        .BackJump => |v| {
+            const addr = offset + 3 - self.getu16(offset + 1);
             try stdout.writer().print("{}: {d:0>4}\n", .{ v, addr });
             return offset + 3;
         },

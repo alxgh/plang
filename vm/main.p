@@ -1,9 +1,6 @@
-var x = 4;
-var y = 5;
-if (x==4 or y == 5) {
-    print "salam";
-} else if (y == 5) {
-    print "solom";
-} else {
-    print "OH!";
+var x = 10;
+
+while (x >= 4) {
+    print x;
+    x = x - 1;
 }

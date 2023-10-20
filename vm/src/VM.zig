@@ -271,6 +271,10 @@ pub fn run(self: *Self) RunError!void {
                     self.ip += offset;
                 }
             },
+            .BackJump => {
+                var offset = self.readu16();
+                self.ip -= offset;
+            },
         }
     }
 }
