@@ -50,8 +50,8 @@ fn getRule(op_t: Scanner.TokenType) *const ParseRule {
         .BangEq => &.{ .infix = binary, .precedence = .Comparison },
         .Str => &.{ .prefix = string },
         .Iden => &.{ .prefix = variable },
-        // .Or => &.{ .infix = or_, .precedence = .Or },
-        // .And => &.{ .infix = and_, .precedence = .And },
+        .Or => &.{ .infix = or_, .precedence = .Or },
+        .And => &.{ .infix = and_, .precedence = .And },
         else => &.{},
     };
 }
@@ -304,6 +304,24 @@ fn expressionStmt(self: *Self) !void {
 
 fn expression(self: *Self) !void {
     try self.parsePrecedence(.Assignment);
+}
+
+fn and_(self: *Self, _: bool) !void {
+    var j = try self.emitJump(.JumpIfFalse);
+    try self.emitOpByte(.Pop);
+    try self.parsePrecedence(.And);
+
+    try self.patchJump(j);
+}
+
+fn or_(self: *Self, _: bool) !void {
+    var else_j = try self.emitJump(.JumpIfFalse);
+    var then_j = try self.emitJump(.Jump);
+    try self.patchJump(else_j);
+    try self.emitOpByte(.Pop);
+    try self.parsePrecedence(.And);
+
+    try self.patchJump(then_j);
 }
 
 fn number(self: *Self, can_assign: bool) !void {
