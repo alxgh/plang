@@ -52,6 +52,8 @@ fn getRule(op_t: Scanner.TokenType) *const ParseRule {
         .Iden => &.{ .prefix = variable },
         .Or => &.{ .infix = or_, .precedence = .Or },
         .And => &.{ .infix = and_, .precedence = .And },
+        .Break => &.{ .prefix = break_ },
+        .Continue => &.{ .prefix = continue_ },
         else => &.{},
     };
 }
@@ -63,6 +65,11 @@ const Local = struct {
 
 const Self = @This();
 
+const JumpList = struct {
+    scope: i64,
+    offset: usize,
+};
+
 allocator: Allocator,
 scanner: Scanner,
 current: ?Scanner.Token = null,
@@ -71,16 +78,22 @@ chunk: *Chunk = undefined,
 locals: [256]Local = undefined,
 local_cnt: usize = 0,
 scope_depth: i64 = 0,
+break_jumps: std.ArrayList(JumpList),
+cont_jumps: std.ArrayList(JumpList),
 
 pub fn init(allocator: Allocator, source: []const u8) Self {
     return .{
         .allocator = allocator,
         .scanner = Scanner.init(allocator, source),
+        .break_jumps = std.ArrayList(JumpList).init(allocator),
+        .cont_jumps = std.ArrayList(JumpList).init(allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.scanner.deinit();
+    self.break_jumps.deinit();
+    self.cont_jumps.deinit();
 }
 
 pub fn start(self: *Self, chunk: *Chunk) !void {
@@ -185,9 +198,11 @@ fn ifStmt(self: *Self) !void {
     try self.expression();
     try self.consume(.RightParen, "Expect ')' after condition.");
     var jump = try self.emitJump(.JumpIfFalse);
+    try self.emitOpByte(.Pop);
     try self.statement();
     const else_jump = try self.emitJump(.Jump);
     try self.patchJump(jump);
+    try self.emitOpByte(.Pop);
     if (try self.match(.Else)) {
         try self.statement();
     }
@@ -217,6 +232,16 @@ fn createBackwardJump(self: *Self, offset: usize) !void {
     }
     self.chunk.code.items[j] = @as(u8, @intCast(jump >> 8)) & 0xff;
     self.chunk.code.items[j + 1] = @as(u8, @intCast(jump)) & 0xff;
+}
+
+fn patchBackwardJump(self: *Self, jump_offset: usize, offset: usize) !void {
+    const jump = jump_offset - offset + 2;
+    std.debug.print("bjp: {}\n", .{jump});
+    if (jump > MaxJump) {
+        return error.MaxJumpLines;
+    }
+    self.chunk.code.items[jump_offset] = @as(u8, @intCast(jump >> 8)) & 0xff;
+    self.chunk.code.items[jump_offset + 1] = @as(u8, @intCast(jump)) & 0xff;
 }
 
 fn varDecl(self: *Self) !void {
@@ -307,14 +332,15 @@ fn forStmt(self: *Self) !void {
         try self.consume(.Semicolon, "Expect ; after loop initiation");
     }
 
-    var loop_start = self.chunk.code.items.len;
+    const loop_start = self.chunk.code.items.len;
 
-    if (!self.check(.Semicolon)) {
-        try self.expression();
-    }
+    // if (!self.check(.Semicolon)) {
+    try self.expression();
     const exit_jump = try self.emitJump(.JumpIfFalse);
     try self.emitOpByte(.Pop);
-    try self.consume(.Semicolon, "Expect ; after loop iteration");
+    // }
+
+    try self.consume(.Semicolon, "Expect ; after loop increment");
     const start_jump = try self.emitJump(.Jump);
 
     const condition_start = self.chunk.code.items.len;
@@ -325,11 +351,31 @@ fn forStmt(self: *Self) !void {
     }
     try self.createBackwardJump(loop_start);
 
-    try self.consume(.RightParen, "Expect ')' after condition");
+    try self.consume(.RightParen, "Expect ')' after for clause");
     try self.patchJump(start_jump);
     try self.statement();
     try self.createBackwardJump(condition_start);
+    if (self.cont_jumps.items.len > 0) {
+        var i: i64 = @intCast(self.cont_jumps.items.len - 1);
+        while (i >= 0) : (i -= 1) {
+            if (self.scope_depth <= self.cont_jumps.items[@intCast(i)].scope) {
+                const jump = self.cont_jumps.pop();
+                std.debug.print("bj: {}\n", .{jump});
+                try self.patchBackwardJump(jump.offset, condition_start);
+            }
+        }
+    }
     try self.patchJump(exit_jump);
+    if (self.break_jumps.items.len > 0) {
+        var i: i64 = @intCast(self.break_jumps.items.len - 1);
+        while (i >= 0) : (i -= 1) {
+            if (self.scope_depth <= self.break_jumps.items[@intCast(i)].scope) {
+                const jump = self.break_jumps.pop();
+                std.debug.print("bj: {}\n", .{jump});
+                try self.patchJump(jump.offset);
+            }
+        }
+    }
     try self.emitOpByte(.Pop);
     try self.endScope();
 }
@@ -467,6 +513,17 @@ fn literal(self: *Self, can_assign: bool) !void {
 
 fn variable(self: *Self, can_assign: bool) !void {
     try self.namedVar(self.prev.?, can_assign);
+}
+
+fn break_(self: *Self, can_assign: bool) !void {
+    _ = can_assign;
+    // try self.emitOpByte(.Pop);
+    try self.break_jumps.append(.{ .scope = self.scope_depth, .offset = try self.emitJump(.Jump) });
+}
+
+fn continue_(self: *Self, can_assign: bool) !void {
+    _ = can_assign;
+    try self.cont_jumps.append(.{ .scope = self.scope_depth, .offset = try self.emitJump(.BackJump) });
 }
 
 fn namedVar(self: *Self, tok: Scanner.Token, can_assign: bool) !void {

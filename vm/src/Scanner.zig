@@ -63,6 +63,8 @@ pub const TokenType = enum {
     True,
     Var,
     While,
+    Break,
+    Continue,
 
     EOF,
 };
@@ -84,6 +86,8 @@ const identifierMap = std.ComptimeStringMap(TokenType, .{
     .{ "class", .Class },
     .{ "and", .And },
     .{ "else", .Else },
+    .{ "break", .Break },
+    .{ "continue", .Continue },
 });
 
 const LiteralType = enum {
