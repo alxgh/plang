@@ -1,17 +1,5 @@
-class Polygon {
-    #name;
-    constructor() {
-        this.#name = 'Polygon';
-    }
-
-    x() {
-        console.log(this.#name);
-    }
+var z = 0;
+for (var i = 0; i <= 1000000; i = i + 1) {
+    z = z + 1;
+    console.log(z);
 }
-
-const poly1 = new Polygon();
-
-console.log(poly1.#name);
-poly1.x();
-
-console.log(Polygon);

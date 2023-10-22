@@ -291,20 +291,58 @@ fn statement(self: *Self) !void {
         return self.ifStmt();
     } else if (try self.match(.While)) {
         return self.whileStmt();
+    } else if (try self.match(.For)) {
+        return self.forStmt();
     } else {
         try self.expressionStmt();
     }
 }
 
+fn forStmt(self: *Self) !void {
+    self.beginScope();
+    try self.consume(.LeftParen, "Expect '(' after for");
+    if (!self.check(.Semicolon)) {
+        try self.declaration();
+    } else {
+        try self.consume(.Semicolon, "Expect ; after loop initiation");
+    }
+
+    var loop_start = self.chunk.code.items.len;
+
+    if (!self.check(.Semicolon)) {
+        try self.expression();
+    }
+    const exit_jump = try self.emitJump(.JumpIfFalse);
+    try self.emitOpByte(.Pop);
+    try self.consume(.Semicolon, "Expect ; after loop iteration");
+    const start_jump = try self.emitJump(.Jump);
+
+    const condition_start = self.chunk.code.items.len;
+
+    if (!self.check(.RightParen)) {
+        try self.expression();
+        try self.emitOpByte(.Pop);
+    }
+    try self.createBackwardJump(loop_start);
+
+    try self.consume(.RightParen, "Expect ')' after condition");
+    try self.patchJump(start_jump);
+    try self.statement();
+    try self.createBackwardJump(condition_start);
+    try self.patchJump(exit_jump);
+    try self.emitOpByte(.Pop);
+    try self.endScope();
+}
+
 fn whileStmt(self: *Self) !void {
-    var loopStart = self.chunk.code.items.len;
+    var loop_start = self.chunk.code.items.len;
     try self.consume(.LeftParen, "Expect '(' after while stmt");
     try self.expression();
     try self.consume(.RightParen, "Expect ')' after condition");
     const exit_jump = try self.emitJump(.JumpIfFalse);
     try self.emitOpByte(.Pop);
     try self.statement();
-    try self.createBackwardJump(loopStart);
+    try self.createBackwardJump(loop_start);
     try self.patchJump(exit_jump);
     try self.emitOpByte(.Pop);
 }
