@@ -45,7 +45,6 @@ code: Code,
 allocator: Allocator,
 constants: Values,
 lines: Lines,
-obj: ?*Values.Object = null,
 
 pub fn init(allocator: Allocator) Self {
     return .{
@@ -60,20 +59,6 @@ pub fn deinit(self: *Self) void {
     self.code.deinit();
     self.lines.deinit();
     self.constants.deinit();
-    var obj = self.obj;
-    while (true) {
-        if (obj) |o| {
-            switch (o.value) {
-                .String => |str| {
-                    self.allocator.free(str);
-                },
-            }
-            obj = o.parent;
-            self.allocator.destroy(o);
-            continue;
-        }
-        break;
-    }
 }
 
 pub fn len(self: *Self) usize {
@@ -147,20 +132,4 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
             return offset + 3;
         },
     }
-}
-
-pub fn allocObj(self: *Self) !*Values.Object {
-    var obj = try self.allocator.create(Values.Object);
-    var po = self.obj;
-    obj.*.parent = po;
-    self.obj = obj;
-    return obj;
-}
-
-pub fn allocStr(self: *Self, str: Values.StringObject) !*Values.Object {
-    var obj = try self.allocObj();
-    var strObj = try self.allocator.alloc(u8, str.len);
-    std.mem.copy(u8, strObj, str);
-    obj.*.value.String = strObj;
-    return obj;
 }

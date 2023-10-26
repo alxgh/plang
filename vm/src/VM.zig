@@ -1,6 +1,8 @@
 const std = @import("std");
 const Values = @import("Values.zig");
 const Chunk = @import("Chunk.zig");
+const Objects = @import("Objects.zig");
+const Scanner = @import("Scanner.zig");
 const Compiler = @import("Compiler.zig");
 const util = @import("./util.zig");
 const env = @import("env.zig");
@@ -8,7 +10,8 @@ const env = @import("env.zig");
 const stdout = std.io.getStdOut();
 const stderr = std.io.getStdErr();
 
-const StackSize = 256;
+const MaxFrames = 64;
+const StackSize = MaxFrames * 256;
 
 pub const Result = struct {};
 
@@ -26,36 +29,48 @@ pub const StackError = error{
     Empty,
 };
 
+const CallFrame = struct {
+    function: Values.FunctionObject,
+    ip: usize = 0,
+    vm_stack_idx: usize = 0,
+};
+
 const Self = @This();
 
 allocator: std.mem.Allocator,
-chunk: ?*Chunk = null,
-ip: usize,
+// chunk: ?*Chunk = null,
+// ip: usize,
 stack: [StackSize]Values.Value = undefined,
 stack_pointer: usize = 0,
 globals: std.StringHashMap(Values.Value),
+objects: Objects,
+call_frames: [MaxFrames]CallFrame = undefined,
+frame_cnt: usize = 0,
+current_frame: *CallFrame = undefined,
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
         .allocator = allocator,
-        .ip = 0,
+        // .ip = 0,
         .globals = std.StringHashMap(Values.Value).init(allocator),
+        .objects = Objects.init(allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.globals.deinit();
+    self.objects.deinit();
 }
 
 fn readByte(self: *Self) u8 {
-    var byte = self.chunk.?.getByte(self.ip);
-    self.ip += 1;
+    var byte = self.current_frame.function.chunk.getByte(self.current_frame.ip);
+    self.current_frame.ip += 1;
     return byte;
 }
 
 fn readu16(self: *Self) u16 {
-    var n = self.chunk.?.getu16(self.ip);
-    self.ip += 2;
+    var n = self.current_frame.function.chunk.getu16(self.current_frame.ip);
+    self.current_frame.ip += 2;
     return n;
 }
 
@@ -64,28 +79,47 @@ fn readOp(self: *Self) Chunk.OpCode {
 }
 
 fn readConst(self: *Self) Values.Value {
-    return self.chunk.?.constants.values.items[self.readByte()];
+    return self.current_frame.function.chunk.constants.values.items[self.readByte()];
 }
 
 pub fn interpret(self: *Self, source: []const u8) !void {
-    var compiler = Compiler.init(self.allocator, source);
+    var scanner = Scanner.init(self.allocator, source);
+    defer scanner.deinit();
+    var compiler = try Compiler.init(self.allocator, &scanner, &self.objects, .Script, "");
     defer compiler.deinit();
     var chunk = Chunk.init(self.allocator);
     defer chunk.deinit();
-    try compiler.start(&chunk);
-    self.chunk = &chunk;
+    var function = try compiler.start();
+    try self.push(.{
+        .Object = function,
+    });
+    try self.pushCallFrame(.{
+        .function = function.value.Function,
+    });
     return self.run();
 }
 
+pub fn pushCallFrame(self: *Self, frame: CallFrame) StackError!void {
+    if (self.stack_pointer == StackSize) {
+        return StackError.Full;
+    }
+    self.call_frames[self.frame_cnt] = frame;
+    self.frame_cnt += 1;
+}
+
+pub fn popCallFrame(self: *Self) StackError!CallFrame {
+    if (self.frame_cnt == 0) {
+        return StackError.Empty;
+    }
+    self.frame_cnt -= 1;
+    return self.call_frames[self.frame_cnt];
+}
 const RunError = (std.os.WriteError || Error || StackError || std.mem.Allocator.Error);
 
 pub fn run(self: *Self) RunError!void {
-    if (self.chunk == null) {
-        return Error.InvalidChunk;
-    }
+    self.current_frame = &self.call_frames[self.frame_cnt - 1];
     var writer = stdout.writer();
-    var chunk = self.chunk.?;
-    while (self.ip < chunk.len()) {
+    while (self.current_frame.ip < self.current_frame.function.chunk.len()) {
         if (env.DebugExecutionTrace) {
             try writer.print(util.Color.Green.bgWrap("===STACK==="), .{});
             for (0..self.stack_pointer) |sp| {
@@ -100,7 +134,7 @@ pub fn run(self: *Self) RunError!void {
             }
             try writer.print("\n" ++ util.Color.Cyan.bgWrap("===GLOBAL-VARS-END===") ++ "\n", .{});
 
-            _ = try chunk.disInstr(self.ip);
+            _ = try self.current_frame.function.chunk.disInstr(self.current_frame.ip);
         }
         var instruction = self.readByte();
         const op = @as(Chunk.OpCode, @enumFromInt(instruction));
@@ -151,10 +185,11 @@ pub fn run(self: *Self) RunError!void {
                                 var str = try self.allocator.alloc(u8, left_v.Object.value.String.len + right_v.Object.value.String.len);
                                 std.mem.copy(u8, str[0..left_v.Object.value.String.len], left_v.Object.value.String);
                                 std.mem.copy(u8, str[left_v.Object.value.String.len..], right_v.Object.value.String);
-                                var object = try self.chunk.?.allocObj();
+                                var object = try self.objects.allocObj();
                                 object.*.value.String = str;
                                 try self.push(Values.objValue(object));
                             },
+                            else => unreachable,
                         }
                     },
                     else => return Error.UnsupportedOperation,
@@ -211,6 +246,7 @@ pub fn run(self: *Self) RunError!void {
                             .String => {
                                 try self.push(Values.boolValue(std.mem.eql(u8, left_v.Object.value.String, right_v.Object.value.String)));
                             },
+                            .Function => return Error.InvalidOperand,
                         }
                     },
                     else => return Error.UnsupportedOperation,
@@ -254,26 +290,28 @@ pub fn run(self: *Self) RunError!void {
             },
             .SetLocal => {
                 const slot = self.readByte();
-                self.stack[@intCast(slot)] = try self.peek(0);
+                const idx = self.current_frame.vm_stack_idx + @as(usize, @intCast(slot));
+                self.stack[idx] = try self.peek(0);
             },
             .GetLocal => {
                 const slot = self.readByte();
-                try self.push(self.stack[@intCast(slot)]);
+                const idx = self.current_frame.vm_stack_idx + @as(usize, @intCast(slot));
+                try self.push(self.stack[idx]);
             },
             .Jump => {
                 var offset = self.readu16();
-                self.ip += offset;
+                self.current_frame.ip += offset;
             },
             .JumpIfFalse => {
                 var offset = self.readu16();
                 const e = try self.peek(0);
                 if (e != .Bool or e.Bool == false) {
-                    self.ip += offset;
+                    self.current_frame.ip += offset;
                 }
             },
             .BackJump => {
                 var offset = self.readu16();
-                self.ip -= offset;
+                self.current_frame.ip -= offset;
             },
         }
     }

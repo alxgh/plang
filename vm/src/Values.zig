@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Chunk = @import("Chunk.zig");
 
 pub const Value = union(enum) {
     Bool: bool,
@@ -8,8 +9,17 @@ pub const Value = union(enum) {
 };
 
 pub const Object = struct {
-    value: union(enum) { String: StringObject },
-    parent: ?*Object,
+    value: union(enum) {
+        String: StringObject,
+        Function: FunctionObject,
+    },
+    parent: ?*Object = null,
+};
+
+pub const FunctionObject = struct {
+    arity: u64,
+    chunk: *Chunk,
+    name: StringObject,
 };
 
 pub const StringObject = []const u8;
@@ -54,6 +64,7 @@ pub fn print(writer: anytype, v: Value) !void {
         .Object => |obj| {
             switch (obj.value) {
                 .String => |str| try writer.print("{s}\n", .{str}),
+                .Function => |func| try writer.print("<FN : {s}>\n", .{func.name}),
             }
         },
         else => try writer.print("{}\n", .{v}),

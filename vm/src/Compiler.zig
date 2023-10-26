@@ -4,6 +4,7 @@ const env = @import("env.zig");
 const Scanner = @import("Scanner.zig");
 const Chunk = @import("Chunk.zig");
 const Values = @import("Values.zig");
+const Objects = @import("Objects.zig");
 const Allocator = std.mem.Allocator;
 
 const stderr = std.io.getStdErr().writer();
@@ -70,24 +71,40 @@ const JumpList = struct {
     offset: usize,
 };
 
+pub const FunctionType = enum {
+    Function,
+    Script,
+};
+
 allocator: Allocator,
-scanner: Scanner,
+scanner: *Scanner,
 current: ?Scanner.Token = null,
 prev: ?Scanner.Token = null,
-chunk: *Chunk = undefined,
 locals: [256]Local = undefined,
 local_cnt: usize = 0,
 scope_depth: i64 = 0,
 break_jumps: std.ArrayList(JumpList),
 cont_jumps: std.ArrayList(JumpList),
+objects: *Objects,
+function: Values.FunctionObject = undefined,
+function_obj: *Values.Object = undefined,
+function_type: FunctionType = .Script,
 
-pub fn init(allocator: Allocator, source: []const u8) Self {
-    return .{
+pub fn init(allocator: Allocator, scanner: *Scanner, objects: *Objects, func_type: FunctionType, name: []const u8) !Self {
+    var function_obj = try objects.allocFunction(name, 0, allocator);
+    var c = Self{
         .allocator = allocator,
-        .scanner = Scanner.init(allocator, source),
+        .objects = objects,
+        .scanner = scanner,
         .break_jumps = std.ArrayList(JumpList).init(allocator),
         .cont_jumps = std.ArrayList(JumpList).init(allocator),
+        .function_type = func_type,
+        .function = function_obj.value.Function,
+        .function_obj = function_obj,
     };
+
+    try c.addLocal(Scanner.Token{ .t = .Str, .line = 0, .lexeme = "" });
+    return c;
 }
 
 pub fn deinit(self: *Self) void {
@@ -96,20 +113,20 @@ pub fn deinit(self: *Self) void {
     self.cont_jumps.deinit();
 }
 
-pub fn start(self: *Self, chunk: *Chunk) !void {
-    self.chunk = chunk;
+pub fn start(self: *Self) !*Values.Object {
     try self.advance();
     while (!self.check(.EOF)) {
         try self.declaration();
     }
-    try self.end();
+    return self.end();
 }
 
-fn end(self: *Self) !void {
+fn end(self: *Self) !*Values.Object {
     try self.emitOpByte(.Return);
     if (env.DebugPrintCode) {
-        try self.chunk.disassmble("code");
+        try self.function.chunk.disassmble(if (self.function.name.len != 0) self.function.name else "<script>");
     }
+    return self.function_obj;
 }
 
 fn emitConst(self: *Self, val: Values.Value) !usize {
@@ -121,7 +138,7 @@ fn emitConst(self: *Self, val: Values.Value) !usize {
 }
 
 fn makeConst(self: *Self, val: Values.Value) !usize {
-    const c = try self.chunk.addConstant(val);
+    const c = try self.function.chunk.addConstant(val);
     if (c > 255) {
         try self.err("Maximum number of consts in one chunk!", error.MaxConstReached);
     }
@@ -159,11 +176,11 @@ fn check(self: *Self, t: Scanner.TokenType) bool {
 }
 
 fn emitByte(self: *Self, byte: u8) !void {
-    try self.chunk.write(byte, self.prev.?.line);
+    try self.function.chunk.write(byte, self.prev.?.line);
 }
 
 fn emitOpByte(self: *Self, op: Chunk.OpCode) !void {
-    try self.chunk.write(op.byte(), self.prev.?.line);
+    try self.function.chunk.write(op.byte(), self.prev.?.line);
 }
 
 fn emitMulti(self: *Self, bytes: []const u8) !void {
@@ -187,10 +204,47 @@ fn errAt(self: *Self, msg: []const u8, token: Scanner.Token, e: anyerror) anyerr
 }
 
 fn declaration(self: *Self) !void {
-    if (try self.match(.Var)) {
+    if (try self.match(.Fn)) {
+        return self.fnDecl();
+    } else if (try self.match(.Fn)) {
         return self.varDecl();
     }
     return self.statement();
+}
+
+fn fnDecl(self: *Self) !void {
+    var global = try self.parseVar("Expect function name");
+    self.markInitialized();
+    try self.functionDef(.Function);
+    try self.defGlobalVar(@intCast(global));
+}
+
+fn functionDef(self: *Self, function_type: FunctionType) !void {
+    _ = function_type;
+    var compiler = try Self.init(self.allocator, self.scanner, self.objects, .Function, self.prev.?.lexeme);
+    defer compiler.deinit();
+    compiler.prev = self.prev;
+    compiler.current = self.current;
+    compiler.beginScope();
+    try compiler.consume(.LeftParen, "Expect '(' after function name.");
+    if (!compiler.check(.RightParen)) {
+        while (true) {
+            compiler.function.arity += 1;
+            if (compiler.function.arity > 255) {
+                return compiler.errAtCurrent("Can't have more than 255 as function paramteres.", error.MaxParamExceede);
+            }
+            var constant = try compiler.parseVar("Expect parameter name");
+            try compiler.defGlobalVar(@intCast(constant));
+            if (try compiler.match(.Comma)) continue;
+        }
+    }
+    try compiler.consume(.RightParen, "Expect ')' after parameters.");
+    try compiler.consume(.LeftBrace, "Expect '{' before function body.");
+    try compiler.block();
+    var fn_obj = try compiler.end();
+    self.prev = compiler.prev;
+    self.current = compiler.current;
+    _ = try self.emitConst(Values.objValue(fn_obj));
 }
 
 fn ifStmt(self: *Self) !void {
@@ -211,37 +265,35 @@ fn ifStmt(self: *Self) !void {
 
 fn emitJump(self: *Self, jump_type: Chunk.OpCode) !usize {
     try self.emitMulti(&[_]u8{ jump_type.byte(), 0xff, 0xff });
-    return self.chunk.code.items.len - 2;
+    return self.function.chunk.code.items.len - 2;
 }
 
 fn patchJump(self: *Self, offset: usize) !void {
-    const jump = self.chunk.code.items.len - offset - 2;
+    const jump = self.function.chunk.code.items.len - offset - 2;
     if (jump > MaxJump) {
         return error.MaxJumpLines;
     }
-    self.chunk.code.items[offset] = @as(u8, @intCast(jump >> 8)) & 0xff;
-    self.chunk.code.items[offset + 1] = @as(u8, @intCast(jump)) & 0xff;
+    self.function.chunk.code.items[offset] = @as(u8, @intCast(jump >> 8)) & 0xff;
+    self.function.chunk.code.items[offset + 1] = @as(u8, @intCast(jump)) & 0xff;
 }
 
 fn createBackwardJump(self: *Self, offset: usize) !void {
     const j = try self.emitJump(.BackJump);
-    const jump = self.chunk.code.items.len - offset;
-    std.debug.print("{}\n", .{jump});
+    const jump = self.function.chunk.code.items.len - offset;
     if (jump > MaxJump) {
         return error.MaxJumpLines;
     }
-    self.chunk.code.items[j] = @as(u8, @intCast(jump >> 8)) & 0xff;
-    self.chunk.code.items[j + 1] = @as(u8, @intCast(jump)) & 0xff;
+    self.function.chunk.code.items[j] = @as(u8, @intCast(jump >> 8)) & 0xff;
+    self.function.chunk.code.items[j + 1] = @as(u8, @intCast(jump)) & 0xff;
 }
 
 fn patchBackwardJump(self: *Self, jump_offset: usize, offset: usize) !void {
     const jump = jump_offset - offset + 2;
-    std.debug.print("bjp: {}\n", .{jump});
     if (jump > MaxJump) {
         return error.MaxJumpLines;
     }
-    self.chunk.code.items[jump_offset] = @as(u8, @intCast(jump >> 8)) & 0xff;
-    self.chunk.code.items[jump_offset + 1] = @as(u8, @intCast(jump)) & 0xff;
+    self.function.chunk.code.items[jump_offset] = @as(u8, @intCast(jump >> 8)) & 0xff;
+    self.function.chunk.code.items[jump_offset + 1] = @as(u8, @intCast(jump)) & 0xff;
 }
 
 fn varDecl(self: *Self) !void {
@@ -326,13 +378,13 @@ fn statement(self: *Self) !void {
 fn forStmt(self: *Self) !void {
     self.beginScope();
     try self.consume(.LeftParen, "Expect '(' after for");
-    if (!self.check(.Semicolon)) {
-        try self.declaration();
+    if (try self.match(.Var)) {
+        try self.varDecl();
     } else {
         try self.consume(.Semicolon, "Expect ; after loop initiation");
     }
 
-    const loop_start = self.chunk.code.items.len;
+    const loop_start = self.function.chunk.code.items.len;
 
     // if (!self.check(.Semicolon)) {
     try self.expression();
@@ -343,7 +395,7 @@ fn forStmt(self: *Self) !void {
     try self.consume(.Semicolon, "Expect ; after loop increment");
     const start_jump = try self.emitJump(.Jump);
 
-    const condition_start = self.chunk.code.items.len;
+    const condition_start = self.function.chunk.code.items.len;
 
     if (!self.check(.RightParen)) {
         try self.expression();
@@ -360,7 +412,6 @@ fn forStmt(self: *Self) !void {
         while (i >= 0) : (i -= 1) {
             if (self.scope_depth <= self.cont_jumps.items[@intCast(i)].scope) {
                 const jump = self.cont_jumps.pop();
-                std.debug.print("bj: {}\n", .{jump});
                 try self.patchBackwardJump(jump.offset, condition_start);
             }
         }
@@ -371,7 +422,6 @@ fn forStmt(self: *Self) !void {
         while (i >= 0) : (i -= 1) {
             if (self.scope_depth <= self.break_jumps.items[@intCast(i)].scope) {
                 const jump = self.break_jumps.pop();
-                std.debug.print("bj: {}\n", .{jump});
                 try self.patchJump(jump.offset);
             }
         }
@@ -381,7 +431,7 @@ fn forStmt(self: *Self) !void {
 }
 
 fn whileStmt(self: *Self) !void {
-    var loop_start = self.chunk.code.items.len;
+    var loop_start = self.function.chunk.code.items.len;
     try self.consume(.LeftParen, "Expect '(' after while stmt");
     try self.expression();
     try self.consume(.RightParen, "Expect ')' after condition");
@@ -559,17 +609,22 @@ fn resolveLocal(self: *Self, name: Scanner.Token) !i64 {
 
 fn string(self: *Self, can_assign: bool) !void {
     _ = can_assign;
-    _ = try self.emitConst(Values.objValue(try self.chunk.allocStr(self.prev.?.literal.?.String)));
+    _ = try self.emitConst(Values.objValue(try self.objects.allocStr(self.prev.?.literal.?.String)));
 }
 
 fn idenConst(self: *Self, t: Scanner.Token) !usize {
-    return self.makeConst(Values.objValue(try self.chunk.allocStr(t.lexeme)));
+    return self.makeConst(Values.objValue(try self.objects.allocStr(t.lexeme)));
 }
 
 fn defGlobalVar(self: *Self, global: u8) !void {
     if (self.scope_depth > 0) {
-        self.locals[self.local_cnt - 1].depth = self.scope_depth;
+        self.markInitialized();
         return;
     }
     try self.emitMulti(&[_]u8{ Chunk.OpCode.DefineGlobal.byte(), global });
+}
+
+fn markInitialized(self: *Self) void {
+    if (self.scope_depth == 0) return;
+    self.locals[self.local_cnt - 1].depth = self.scope_depth;
 }
