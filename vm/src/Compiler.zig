@@ -33,7 +33,7 @@ const ParseRule = struct {
 
 fn getRule(op_t: Scanner.TokenType) *const ParseRule {
     return switch (op_t) {
-        .LeftParen => &.{ .prefix = grouping },
+        .LeftParen => &.{ .prefix = grouping, .infix = call, .precedence = .Call },
         .Minus => &.{ .prefix = unary, .infix = binary, .precedence = .Term },
         .Plus => &.{ .infix = binary, .precedence = .Term },
         .Slash => &.{ .infix = binary, .precedence = .Factor },
@@ -121,8 +121,13 @@ pub fn start(self: *Self) !*Values.Object {
     return self.end();
 }
 
-fn end(self: *Self) !*Values.Object {
+fn emitReturn(self: *Self) !void {
+    try self.emitOpByte(.Nil);
     try self.emitOpByte(.Return);
+}
+
+fn end(self: *Self) !*Values.Object {
+    try self.emitReturn();
     if (env.DebugPrintCode) {
         try self.function.chunk.disassmble(if (self.function.name.len != 0) self.function.name else "<script>");
     }
@@ -236,6 +241,7 @@ fn functionDef(self: *Self, function_type: FunctionType) !void {
             var constant = try compiler.parseVar("Expect parameter name");
             try compiler.defGlobalVar(@intCast(constant));
             if (try compiler.match(.Comma)) continue;
+            break;
         }
     }
     try compiler.consume(.RightParen, "Expect ')' after parameters.");
@@ -358,12 +364,15 @@ fn endScope(self: *Self) !void {
 }
 
 fn statement(self: *Self) !void {
-    if (try self.match(.Print)) {
+    if (try self.match(.Return)) {
+        return self.retStmt();
+    } else if (try self.match(.Print)) {
         try self.printStmt();
     } else if (try self.match(.LeftBrace)) {
         self.beginScope();
         try self.block();
         try self.endScope();
+        return;
     } else if (try self.match(.If)) {
         return self.ifStmt();
     } else if (try self.match(.While)) {
@@ -373,6 +382,16 @@ fn statement(self: *Self) !void {
     } else {
         try self.expressionStmt();
     }
+}
+
+fn retStmt(self: *Self) !void {
+    if (try self.match(.Semicolon)) {
+        try self.emitReturn();
+        return;
+    }
+    try self.expression();
+    try self.consume(.Semicolon, "Expect ';' after return value");
+    try self.emitOpByte(.Return);
 }
 
 fn forStmt(self: *Self) !void {
@@ -529,6 +548,30 @@ fn parsePrecedence(self: *Self, p: Precedence) !void {
     if (can_assign and try self.match(.Eq)) {
         return error.InvalidAssignment;
     }
+}
+
+fn call(self: *Self, _: bool) !void {
+    const arg_c = try self.argList();
+    try self.emitOpByte(.Call);
+    try self.emitByte(@intCast(arg_c));
+}
+
+fn argList(self: *Self) !usize {
+    var arg_c: usize = 0;
+
+    if (!self.check(.RightParen)) {
+        while (true) {
+            try self.expression();
+            if (arg_c == 255) try self.err("Can't have more than 255 arguments.", error.MaxArgExceeded);
+            arg_c += 1;
+
+            if (try self.match(.Comma)) continue;
+            break;
+        }
+    }
+    try self.consume(.RightParen, "Expect ')' after arguments.");
+
+    return arg_c;
 }
 
 fn binary(self: *Self, can_assign: bool) !void {

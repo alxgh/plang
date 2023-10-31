@@ -144,8 +144,14 @@ pub fn run(self: *Self) RunError!void {
             },
             .Return => {
                 // just return
-                self.popAndIgnore() catch {};
-                return;
+                var res = try self.pop();
+                self.frame_cnt -= 1;
+                if (self.frame_cnt == 0) {
+                    _ = try self.pop();
+                    return;
+                }
+                try self.push(res);
+                self.current_frame = &self.call_frames[self.frame_cnt - 1];
             },
             .Constant => {
                 var constant = self.readConst();
@@ -313,8 +319,29 @@ pub fn run(self: *Self) RunError!void {
                 var offset = self.readu16();
                 self.current_frame.ip -= offset;
             },
+            .Call => {
+                const arg_c = self.readByte();
+                try self.callValue(try self.peek(arg_c), arg_c);
+            },
         }
     }
+}
+
+fn callValue(self: *Self, callee: Values.Value, arg_c: u8) !void {
+    if (callee == .Object and callee.Object.value == .Function) {
+        try self.call(callee.Object.value.Function, arg_c);
+        return;
+    }
+    // runtime error
+    return error.Runtime;
+}
+
+fn call(self: *Self, func: Values.FunctionObject, arg_c: u8) !void {
+    try self.pushCallFrame(.{
+        .function = func,
+        .vm_stack_idx = self.stack_pointer - arg_c - 1,
+    });
+    self.current_frame = &self.call_frames[self.frame_cnt - 1];
 }
 
 pub fn push(self: *Self, value: Values.Value) StackError!void {

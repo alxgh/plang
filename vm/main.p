@@ -11,3 +11,11 @@ fn areWeHavingItYet() {
 }
 
 print areWeHavingItYet;
+areWeHavingItYet();
+print "yooHoo!";
+
+fn math(x) {
+  return x + 11;
+}
+
+print math(23);

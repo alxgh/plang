@@ -29,6 +29,8 @@ pub const OpCode = enum(u8) {
     JumpIfFalse,
     BackJump,
 
+    Call,
+
     pub fn byte(oc: OpCode) u8 {
         return @intFromEnum(oc);
     }
@@ -116,7 +118,7 @@ pub fn disInstr(self: *Self, offset: usize) !usize {
             try stdout.writer().print("{s}\n", .{@tagName(v)});
             return offset + 1;
         },
-        .GetLocal, .SetLocal => |v| {
+        .GetLocal, .SetLocal, .Call => |v| {
             const slot = self.code.items[offset + 1];
             try stdout.writer().print("{}: {d:0>4}\n", .{ v, slot });
             return offset + 2;
