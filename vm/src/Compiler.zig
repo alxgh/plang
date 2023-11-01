@@ -86,7 +86,7 @@ scope_depth: i64 = 0,
 break_jumps: std.ArrayList(JumpList),
 cont_jumps: std.ArrayList(JumpList),
 objects: *Objects,
-function: Values.FunctionObject = undefined,
+function: *Values.FunctionObject = undefined,
 function_obj: *Values.Object = undefined,
 function_type: FunctionType = .Script,
 
@@ -99,7 +99,7 @@ pub fn init(allocator: Allocator, scanner: *Scanner, objects: *Objects, func_typ
         .break_jumps = std.ArrayList(JumpList).init(allocator),
         .cont_jumps = std.ArrayList(JumpList).init(allocator),
         .function_type = func_type,
-        .function = function_obj.value.Function,
+        .function = &function_obj.value.Function,
         .function_obj = function_obj,
     };
 

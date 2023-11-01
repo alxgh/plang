@@ -22,6 +22,7 @@ pub const Error = error{
     UnsupportedOperation,
     InvalidByte,
     UndefinedVariable,
+    InvalidArity,
 };
 
 pub const StackError = error{
@@ -337,6 +338,9 @@ fn callValue(self: *Self, callee: Values.Value, arg_c: u8) !void {
 }
 
 fn call(self: *Self, func: Values.FunctionObject, arg_c: u8) !void {
+    if (arg_c != func.arity) {
+        return Error.InvalidArity;
+    }
     try self.pushCallFrame(.{
         .function = func,
         .vm_stack_idx = self.stack_pointer - arg_c - 1,

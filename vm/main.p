@@ -18,4 +18,4 @@ fn math(x) {
   return x + 11;
 }
 
-print math(23);
+print math(12);
